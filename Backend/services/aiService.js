@@ -1,26 +1,13 @@
-// // services/aiService.js
-// import OpenAI from "openai";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
-// const client = new OpenAI({
-//   apiKey: process.env.OPENAI_API_KEY,
-// });
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 export const summarizeNews = async (text) => {
-  const response = await client.chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [
-      { role: "system", content: "Summarize news in 2-3 lines" },
-      { role: "user", content: text },
-    ],
-  });
+  const model = genAI.getGenerativeModel({ model: "gemini-pro" });
 
-  return response.choices[0].message.content;
-};
-
-export const filterNewsAdvanced = (news, user) => {
-  return news.filter(item =>
-    user.interests.some(i =>
-      item.title.toLowerCase().includes(i.toLowerCase())
-    )
+  const result = await model.generateContent(
+    `Summarize this news in 2-3 lines:\n${text}`
   );
+
+  return result.response.text();
 };
