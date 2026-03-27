@@ -1,6 +1,6 @@
 import express from "express";
 import mongoose from "mongoose";
-import dotenv from "dotenv";
+
 import cors from "cors";
 
 import authRoutes from "./routes/authRoutes.js";
@@ -10,8 +10,11 @@ import compareRoutes from "./routes/compareRoutes.js";
 import taskRoutes from "./routes/taskRoutes.js";
 import alertRoutes from "./routes/alertRoutes.js";
 import searchRoutes from "./routes/searchRoutes.js";
-
+import dotenv from "dotenv";
 dotenv.config();
+
+
+
 
 const app = express();
 
@@ -25,6 +28,9 @@ app.use("/api/compare", compareRoutes);
 app.use("/api/tasks", taskRoutes);
 app.use("/api/alerts", alertRoutes);
 app.use("/api/search", searchRoutes);
+
+
+
 
 mongoose.connect(process.env.MONGO_URI)
   .then(() => {
