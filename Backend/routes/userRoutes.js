@@ -1,10 +1,13 @@
 import express from "express";
+import { authenticateToken } from "../middleware/auth.js";
 import { saveNews, getSavedNews } from "../controllers/userController.js";
-import authMiddleware from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
-router.post("/save", authMiddleware, saveNews);
-router.get("/saved", authMiddleware, getSavedNews);
+// All routes require authentication
+router.use(authenticateToken);
+
+router.post("/save", saveNews);
+router.get("/saved", getSavedNews);
 
 export default router;
