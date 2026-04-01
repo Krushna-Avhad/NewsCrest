@@ -65,7 +65,7 @@ export const sendMessage = async (req, res) => {
       metadata: {
         intent: aiResponse.intent,
         entities: aiResponse.searchKeywords,
-        articlesShown: aiResponse.articles.map(article => article._id),
+        articlesShown: (aiResponse.articles || []).filter(a => a._id).map(a => a._id),
         confidence: 0.8
       }
     };
