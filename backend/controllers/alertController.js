@@ -2,6 +2,7 @@
 import { fetchNews } from "../services/newsService.js";
 import { getPriority } from "../utils/priorityHelper.js";
 import { sendAlertEmail } from "../services/emailService.js";
+import mongoose from "mongoose";
 import Alert from "../models/Alert.js";
 import { 
   createAlert, 
@@ -187,7 +188,7 @@ export const getAlertStatistics = async (req, res) => {
     const userId = req.user.id;
 
     const stats = await Alert.aggregate([
-      { $match: { userId } },
+      { $match: { userId: new mongoose.Types.ObjectId(userId) } },
       {
         $group: {
           _id: '$type',
