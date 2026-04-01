@@ -14,8 +14,8 @@ export const compareArticles = async (req, res) => {
     }
 
     // If article IDs are provided, fetch full articles
-    let comparisonItem1 = item1;
-    let comparisonItem2 = item2;
+    let comparisonItem1 = { ...item1, type: item1.type || 'article' };
+    let comparisonItem2 = { ...item2, type: item2.type || 'article' };
 
     if (item1.articleId) {
       const article1 = await News.findById(item1.articleId);
@@ -45,8 +45,11 @@ export const compareArticles = async (req, res) => {
 
     // Process comparison with AI
     const startTime = Date.now();
-    const comparisonResults = await compareNews(comparisonItem1, comparisonItem2);
+    const rawResults = await compareNews(comparisonItem1, comparisonItem2);
     const processingTime = Date.now() - startTime;
+
+    // Sanitize results — ensure arrays contain proper objects, not raw strings
+    const comparisonResults = sanitizeComparisonResults(rawResults);
 
     // Save comparison to database
     const comparison = await Comparison.create({
@@ -67,6 +70,31 @@ export const compareArticles = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+// ── Helper: sanitize AI results before saving to MongoDB ─────────────────────
+// Guards against Gemini returning a JSON string instead of parsed array etc.
+function sanitizeComparisonResults(raw) {
+  if (!raw || typeof raw !== 'object') return {};
+
+  const sanitizeArray = (arr, defaultShape) => {
+    if (!Array.isArray(arr)) return [];
+    return arr.map(item => {
+      // If item is a string (mis-parsed), wrap it
+      if (typeof item === 'string') return { ...defaultShape, content: item };
+      return item;
+    });
+  };
+
+  return {
+    similarities: sanitizeArray(raw.similarities, { aspect: '', description: '', confidence: 0.5 }),
+    differences:  sanitizeArray(raw.differences,  { aspect: '', description: '', confidence: 0.5 }),
+    insights:     sanitizeArray(raw.insights,      { type: 'key_takeaway', content: '', importance: 'medium' }),
+    overallScore: typeof raw.overallScore === 'number' ? raw.overallScore : 0.5,
+    sentiment:    raw.sentiment && typeof raw.sentiment === 'object' ? raw.sentiment : {
+      item1: 'neutral', item2: 'neutral', comparison: 'similar_sentiment'
+    },
+  };
+}
 
 // COMPARE TWO ARTICLES BY ID
 export const compareArticlesById = async (req, res) => {
@@ -103,8 +131,9 @@ export const compareArticlesById = async (req, res) => {
 
     // Process comparison with AI
     const startTime = Date.now();
-    const comparisonResults = await compareNews(item1, item2);
+    const rawResults = await compareNews(item1, item2);
     const processingTime = Date.now() - startTime;
+    const comparisonResults = sanitizeComparisonResults(rawResults);
 
     // Save comparison to database
     const comparison = await Comparison.create({

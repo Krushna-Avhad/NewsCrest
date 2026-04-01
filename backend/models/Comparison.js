@@ -7,14 +7,14 @@ const comparisonSchema = new mongoose.Schema({
     content: String,
     url: String,
     source: String,
-    type: { type: String, enum: ['article', 'topic', 'headline'], required: true }
+    type: { type: String, enum: ['article', 'topic', 'headline'], default: 'article' }
   },
   item2: {
     title: String,
     content: String,
     url: String,
     source: String,
-    type: { type: String, enum: ['article', 'topic', 'headline'], required: true }
+    type: { type: String, enum: ['article', 'topic', 'headline'], default: 'article' }
   },
   results: {
     similarities: [{
