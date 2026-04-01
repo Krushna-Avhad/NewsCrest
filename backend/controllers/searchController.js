@@ -98,10 +98,17 @@ export const getTrendingTopics = async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 20;
 
-    // Get trending articles and extract common keywords/tags
-    const trendingArticles = await News.find({ trending: true })
+    // Get trending articles; fall back to all recent if none are flagged trending
+    let trendingArticles = await News.find({ trending: true })
       .select('tags category')
       .limit(100);
+
+    if (trendingArticles.length === 0) {
+      trendingArticles = await News.find()
+        .select('tags category')
+        .sort({ publishedAt: -1 })
+        .limit(100);
+    }
 
     // Count frequency of tags
     const tagFrequency = {};
@@ -330,13 +337,14 @@ export const getSearchSuggestions = async (req, res) => {
       category: { $regex: q, $options: 'i' }
     });
 
-    res.json({
-      suggestions: {
-        titles: titleSuggestions.map(article => article.title),
-        tags: tagSuggestions,
-        categories: categorySuggestions
-      }
-    });
+    // Return a flat array of strings so frontend can use data.suggestions directly
+    const flatSuggestions = [
+      ...titleSuggestions.map(article => article.title),
+      ...tagSuggestions,
+      ...categorySuggestions
+    ].filter((v, i, arr) => arr.indexOf(v) === i).slice(0, limit);
+
+    res.json({ suggestions: flatSuggestions });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
