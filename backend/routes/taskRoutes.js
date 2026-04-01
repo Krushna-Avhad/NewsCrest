@@ -1,5 +1,5 @@
-import express from "express";
-import { authenticateToken } from "../middleware/auth.js";
+import express from 'express';
+import { authenticateToken } from '../middleware/auth.js';
 import {
   createTask,
   createNoteFromArticle,
@@ -12,44 +12,28 @@ import {
   getTasksByType,
   getUpcomingDeadlines,
   getTaskStatistics
-} from "../controllers/taskController.js";
+} from '../controllers/taskController.js';
 
 const router = express.Router();
 
 // All routes require authentication
 router.use(authenticateToken);
 
-// Create task/note
-router.post("/", createTask);
+// Specific GET routes MUST come before /:taskId to avoid param shadowing
+router.get('/type/:type', getTasksByType);
+router.get('/deadlines', getUpcomingDeadlines);
+router.get('/statistics', getTaskStatistics);
 
-// Create note from article
-router.post("/article/:articleId/note", createNoteFromArticle);
+// Collection routes
+router.post('/', createTask);
+router.post('/article/:articleId/note', createNoteFromArticle);
+router.get('/', getTasks);
 
-// Get all tasks/notes
-router.get("/", getTasks);
-
-// Get single task
-router.get("/:taskId", getTask);
-
-// Update task
-router.put("/:taskId", updateTask);
-
-// Toggle completion status
-router.put("/:taskId/toggle", toggleTaskCompletion);
-
-// Toggle pin status
-router.put("/:taskId/pin", togglePinStatus);
-
-// Delete task
-router.delete("/:taskId", deleteTask);
-
-// Get tasks by type
-router.get("/type/:type", getTasksByType);
-
-// Get upcoming deadlines
-router.get("/deadlines", getUpcomingDeadlines);
-
-// Get task statistics
-router.get("/statistics", getTaskStatistics);
+// Param routes (must be last for GET/PUT/DELETE)
+router.get('/:taskId', getTask);
+router.put('/:taskId', updateTask);
+router.put('/:taskId/toggle', toggleTaskCompletion);
+router.put('/:taskId/pin', togglePinStatus);
+router.delete('/:taskId', deleteTask);
 
 export default router;

@@ -1,4 +1,5 @@
 // controllers/taskController.js
+import mongoose from "mongoose";
 import Task from "../models/Task.js";
 import News from "../models/News.js";
 
@@ -298,7 +299,7 @@ export const getTaskStatistics = async (req, res) => {
     const userId = req.user.id;
 
     const stats = await Task.aggregate([
-      { $match: { userId } },
+      { $match: { userId: new mongoose.Types.ObjectId(userId) } },
       {
         $group: {
           _id: '$type',
@@ -311,7 +312,7 @@ export const getTaskStatistics = async (req, res) => {
     ]);
 
     const priorityStats = await Task.aggregate([
-      { $match: { userId } },
+      { $match: { userId: new mongoose.Types.ObjectId(userId) } },
       {
         $group: {
           _id: '$priority',

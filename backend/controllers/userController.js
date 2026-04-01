@@ -4,7 +4,7 @@ import User from "../models/User.js";
 export const saveNews = async (req, res) => {
   const user = await User.findById(req.user.id);
 
-  user.savedNews.push(req.body);
+  if (!user.savedArticles.includes(req.body.articleId)) { user.savedArticles.push(req.body.articleId); }
 
   await user.save();
 
@@ -13,5 +13,5 @@ export const saveNews = async (req, res) => {
 
 export const getSavedNews = async (req, res) => {
   const user = await User.findById(req.user.id);
-  res.json(user.savedNews);
+  res.json(user.savedArticles);
 };
