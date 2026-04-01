@@ -1,5 +1,5 @@
 // controllers/newsController.js
-import { fetchNews, saveNewsToDatabase } from "../services/newsService.js";
+import { fetchAllCategories, fetchNews, saveNewsToDatabase } from "../services/newsService.js";
 import { summarizeNews, filterNewsAdvanced } from "../services/aiService.js";
 import User from "../models/User.js";
 import News from "../models/News.js";
@@ -8,46 +8,71 @@ export const getMyFeed = async (req, res) => {
   try {
     // 1. Get logged-in user
     const user = await User.findById(req.user.id);
-
     if (!user) {
       return res.status(404).json({ error: "User not found" });
     }
 
-    // 2. Fetch news (from News API)
-    const news = await fetchNews();
+    // 2. Fetch news - Attempt to get from Database first (Pro Tip implementation)
+    // We fetch the latest 100 articles to have a good variety to filter from
+    let news = await News.find().sort({ publishedAt: -1 }).limit(100);
 
+    // 3. Fallback: If Database is empty, fetch from API directly
     if (!news || news.length === 0) {
-      return res.status(404).json({ error: "No news found" });
+      console.log("DB empty, fetching from API...");
+      news = await fetchAllCategories(); 
+      // Optional: Save these to DB so next time it's faster
+      await saveNewsToDatabase(news);
     }
 
-    // 3. Filter news based on user interests
+    if (!news || news.length === 0) {
+      return res.status(404).json({ error: "No news found at the moment" });
+    }
+
+    // 4. Filter news based on user interests
     const filtered = filterNewsAdvanced(news, user);
 
-    // 4. If no match, fallback to top news
+    // 5. If no interest match, fallback to the general pool
     const newsToProcess = filtered.length > 0 ? filtered : news;
 
-    // 5. Limit to avoid API overload (VERY IMPORTANT)
+    // 6. Limit to avoid Gemini/AI API overload (Max 10 summaries)
     const limitedNews = newsToProcess.slice(0, 10);
 
-    // 6. Summarize using AI
+    // 7. Summarize using AI (Gemini)
     const summarized = await Promise.all(
       limitedNews.map(async (item) => {
-        const text = item.content || item.description || item.title;
+        // Use content, or description, or title as the source for AI
+        const text = item.content || item.description || item.summary || item.title;
 
-        const summary = await summarizeNews(text);
+        try {
+          const summary = await summarizeNews(text);
 
-        return {
-          title: item.title,
-          summary,
-          source: item.source?.name,
-          url: item.url,
-          image: item.urlToImage,
-          publishedAt: item.publishedAt,
-        };
+          // We return the EXACT structure your previous version used
+          // so your Frontend (React/Flutter) works without changes
+          return {
+            title: item.title,
+            summary: summary,
+            source: item.source?.name || item.source, // Handles both API and DB shapes
+            url: item.url,
+            image: item.imageUrl || item.urlToImage, // Handles both field name variations
+            publishedAt: item.publishedAt,
+            category: item.category // Added category for better UI display
+          };
+        } catch (aiErr) {
+          // If Gemini fails for one article, don't crash the whole feed
+          return {
+            title: item.title,
+            summary: item.description || item.summary || "Click to read more...",
+            source: item.source?.name || item.source,
+            url: item.url,
+            image: item.imageUrl || item.urlToImage,
+            publishedAt: item.publishedAt,
+            category: item.category
+          };
+        }
       })
     );
 
-    // 7. Send response
+    // 8. Send final response
     res.json(summarized);
 
   } catch (err) {
@@ -109,15 +134,12 @@ export const getPersonalizedFeed = async (req, res) => {
       query.category = { $in: user.interests };
     }
 
-    // Add location-based news
+    // Add location-based news (guard against empty $or which causes MongoDB error)
     if (user.city || user.state) {
-      query.$or = query.$or || [];
-      if (user.city) {
-        query.$or.push({ 'location.city': user.city });
-      }
-      if (user.state) {
-        query.$or.push({ 'location.state': user.state });
-      }
+      const locationOr = [];
+      if (user.city) locationOr.push({ 'location.city': user.city });
+      if (user.state) locationOr.push({ 'location.state': user.state });
+      if (locationOr.length > 0) query.$or = locationOr;
     }
 
     // Profile-based filtering
@@ -132,8 +154,7 @@ export const getPersonalizedFeed = async (req, res) => {
     const news = await News.find(query)
       .sort({ publishedAt: -1, trending: -1 })
       .skip(skip)
-      .limit(limit)
-      .populate('engagement');
+      .limit(limit);
 
     const total = await News.countDocuments(query);
     const totalPages = Math.ceil(total / limit);
@@ -163,13 +184,15 @@ export const getPersonalizedFeed = async (req, res) => {
 export const getTopHeadlines = async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 10;
-    
-    const news = await News.find({ 
-      category: 'Top Headlines',
-      importance: { $in: ['high', 'breaking'] }
-    })
-    .sort({ publishedAt: -1 })
-    .limit(limit);
+
+    // Try Top Headlines category first; fall back to any recent articles
+    let news = await News.find({ category: 'Top Headlines' })
+      .sort({ publishedAt: -1 })
+      .limit(limit);
+
+    if (news.length === 0) {
+      news = await News.find().sort({ publishedAt: -1 }).limit(limit);
+    }
 
     res.json({ news });
   } catch (err) {
@@ -181,10 +204,15 @@ export const getTopHeadlines = async (req, res) => {
 export const getTrendingNews = async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 15;
-    
-    const news = await News.find({ trending: true })
+
+    // Prefer articles marked trending; fall back to most recent
+    let news = await News.find({ trending: true })
       .sort({ publishedAt: -1, 'engagement.shares': -1 })
       .limit(limit);
+
+    if (news.length === 0) {
+      news = await News.find().sort({ publishedAt: -1 }).limit(limit);
+    }
 
     res.json({ news });
   } catch (err) {
@@ -195,19 +223,40 @@ export const getTrendingNews = async (req, res) => {
 // ✅ GET CATEGORY NEWS
 export const getCategoryNews = async (req, res) => {
   try {
-    const { category } = req.params;
+    let { category } = req.params;
+    
+    // 1. Formatting: 'finance' -> 'Finance'
+    const formattedCategory = category.charAt(0).toUpperCase() + category.slice(1).toLowerCase();
+
+    // 2. Robust Pagination (From your previous version)
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
 
-    const news = await News.find({ category })
+    // 3. Flexible Query (Merged search terms)
+    let searchTerms = [category, formattedCategory];
+    if (formattedCategory === "Finance") searchTerms.push("Business", "business");
+    if (formattedCategory === "India") searchTerms.push("india", "India News");
+    if (formattedCategory === "Fashion") searchTerms.push("fasion", "fashion", "Lifestyle");
+    if (formattedCategory === "Top" || category === "headlines") searchTerms.push("Top Headlines");
+
+    const query = { category: { $in: searchTerms } };
+
+    // 4. Database Fetch
+    let news = await News.find(query)
       .sort({ publishedAt: -1 })
       .skip(skip)
       .limit(limit);
 
-    const total = await News.countDocuments({ category });
+    // 5. Special Fallback for India (If specific India tag is empty)
+    if (news.length === 0 && formattedCategory === "India") {
+      news = await News.find().sort({ publishedAt: -1 }).limit(limit);
+    }
+
+    const total = await News.countDocuments(query);
     const totalPages = Math.ceil(total / limit);
 
+    // 6. Detailed Response
     res.json({
       news,
       pagination: {
@@ -220,6 +269,7 @@ export const getCategoryNews = async (req, res) => {
       }
     });
   } catch (err) {
+    console.error("Category Fetch Error:", err.message);
     res.status(500).json({ error: err.message });
   }
 };
@@ -227,27 +277,33 @@ export const getCategoryNews = async (req, res) => {
 // ✅ GET LOCAL NEWS
 export const getLocalNewsHandler = async (req, res) => {
   try {
-    const user = req.user;
-    const limit = parseInt(req.query.limit) || 20;
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ error: "User not found" });
 
-    let query = { category: 'Local' };
+    const city = user.city || "India";
     
-    if (user.city || user.state) {
-      query.$or = [];
-      if (user.city) {
-        query.$or.push({ 'location.city': user.city });
-      }
-      if (user.state) {
-        query.$or.push({ 'location.state': user.state });
-      }
+    // Regex search for city name in title or content
+    const query = {
+      $or: [
+        { title: new RegExp(city, 'i') },
+        { content: new RegExp(city, 'i') }
+      ]
+    };
+
+    let news = await News.find(query).sort({ publishedAt: -1 }).limit(20);
+
+    // Fallback to recent news if no city-specific matches
+    if (news.length === 0) {
+      news = await News.find().sort({ publishedAt: -1 }).limit(10);
     }
 
-    const news = await News.find(query)
-      .sort({ publishedAt: -1 })
-      .limit(limit);
-
-    res.json({ news });
+    res.json({ 
+      news, 
+      location: { city: user.city, state: user.state },
+      message: news.length > 0 ? `News for ${city}` : "Showing general news"
+    });
   } catch (err) {
+    console.error("Local News Error:", err.message);
     res.status(500).json({ error: err.message });
   }
 };
@@ -255,17 +311,20 @@ export const getLocalNewsHandler = async (req, res) => {
 // ✅ GET GOOD NEWS
 export const getGoodNewsHandler = async (req, res) => {
   try {
-    const limit = parseInt(req.query.limit) || 20;
+    const positiveWords = ["inspiring", "success", "breakthrough", "won", "happy", "helps", "recovery", "good"];
     
-    const news = await News.find({ 
-      category: 'Good News',
-      sentiment: 'positive'
-    })
-    .sort({ publishedAt: -1 })
-    .limit(limit);
+    const query = {
+      $or: [
+        { title: { $in: positiveWords.map(w => new RegExp(w, 'i')) } },
+        { category: { $in: ["Health", "Science", "Education", "Entertainment"] } }
+      ]
+    };
+
+    const news = await News.find(query).sort({ publishedAt: -1 }).limit(20);
 
     res.json({ news });
   } catch (err) {
+    console.error("Good News Error:", err.message);
     res.status(500).json({ error: err.message });
   }
 };
@@ -286,13 +345,17 @@ export const getArticle = async (req, res) => {
 
     // Add to user's reading history if authenticated
     if (req.user) {
-      const user = await User.findById(req.user.id);
-      user.readingHistory.push({
-        articleId: article._id,
-        readAt: new Date(),
-        readTime: article.readTime
-      });
-      await user.save();
+      try {
+        const user = await User.findById(req.user.id);
+        if (user) {
+          user.readingHistory.push({
+            articleId: article._id,
+            readAt: new Date(),
+            readTime: article.readTime
+          });
+          await user.save();
+        }
+      } catch (_) {} // non-critical, don't fail the request
     }
 
     res.json({ article });
@@ -304,7 +367,7 @@ export const getArticle = async (req, res) => {
 // ✅ SAVE ARTICLE (BOOKMARK)
 export const saveArticle = async (req, res) => {
   try {
-    const { articleId } = req.params;
+    const articleId = req.params.id || req.params.articleId;
     const userId = req.user.id;
 
     const user = await User.findById(userId);
@@ -327,7 +390,7 @@ export const saveArticle = async (req, res) => {
 // ✅ UNSAVE ARTICLE
 export const unsaveArticle = async (req, res) => {
   try {
-    const { articleId } = req.params;
+    const articleId = req.params.id || req.params.articleId;
     const userId = req.user.id;
 
     await User.findByIdAndUpdate(userId, {

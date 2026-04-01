@@ -1,5 +1,5 @@
 import News from "../models/News.js";
-import { generateHatkeSummary, explainSimply, summarizeNews } from "../services/mockAiService.js";
+import { generateHatkeSummary, explainSimply, summarizeNews } from "../services/aiService.js";
 
 // ✅ GET HATKE NEWS
 export const getHatkeNews = async (req, res) => {
@@ -14,12 +14,37 @@ export const getHatkeNews = async (req, res) => {
       query.category = category;
     }
 
-    const news = await News.find(query)
+    let news = await News.find(query)
       .sort({ publishedAt: -1, trending: -1 })
       .skip(skip)
       .limit(limit);
 
-    const total = await News.countDocuments(query);
+    // If no hatke summaries generated yet, fall back to all articles
+    // and generate summaries on-the-fly for first batch
+    if (news.length === 0 && !category) {
+      const fallbackNews = await News.find()
+        .sort({ publishedAt: -1 })
+        .skip(skip)
+        .limit(limit);
+
+      // Generate hatke summaries in background for first batch
+      for (const article of fallbackNews.slice(0, 5)) {
+        try {
+          if (!article.hatkeSummary) {
+            const { generateHatkeSummary } = await import('../services/aiService.js');
+            article.hatkeSummary = await generateHatkeSummary(article.title, article.content);
+            article.aiGenerated = { ...article.aiGenerated, hatkeSummary: true };
+            await article.save();
+          }
+        } catch (_) {}
+      }
+      news = fallbackNews;
+    }
+
+    const countQuery = news.length > 0 && !news[0].hatkeSummary
+      ? {}
+      : query;
+    const total = await News.countDocuments(countQuery);
     const totalPages = Math.ceil(total / limit);
 
     res.json({

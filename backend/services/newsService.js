@@ -1,59 +1,104 @@
 import axios from "axios";
 import News from "../models/News.js";
 
-// ✅ FETCH NEWS FROM EXTERNAL APIs
+// ── Newsdata.io response → internal article shape ────────────────────────────
+// Newsdata.io fields: title, description, content, link, source_name, creator,
+//                     pubDate, category (array), image_url, country (array)
+function mapNewsdataArticle(article, categoryOverride) {
+  const category = categoryOverride || mapCategory(article.category?.[0] || "top");
+  return {
+    title: article.title || "",
+    content: article.content || article.description || article.title || "",
+    summary: article.description || article.title || "",
+    url: article.link || "",
+    source: article.source_name || "Unknown",
+    author: Array.isArray(article.creator) ? article.creator[0] : (article.creator || ""),
+    publishedAt: article.pubDate || new Date().toISOString(),
+    category,
+    imageUrl: article.image_url || "",
+    externalId: article.link || "",
+    language: article.language || "en",
+  };
+}
+
+// Map Newsdata.io category names to our app category names
+function mapCategory(category) {
+  const map = {
+    top: "Top Headlines",
+    technology: "Technology",
+    //business: "Business",
+    business: "Finance",
+    finance: "Finance",
+    politics: "Politics",
+    education: "Education",
+    entertainment: "Entertainment",
+    health: "Health",
+    science: "Science",
+    "fashion": "Fashion",
+    "fasion": "Fashion",
+    sports: "Sports",
+    //india: "India", 
+    world: "World",
+    general: "Top Headlines",
+  };
+  return map[(category || "").toLowerCase()] || "Top Headlines";
+}
+
+
+export const fetchAllCategories = async () => {
+  const categoriesToFetch = [
+    "top", "technology", "business", "sports", "fashion",
+    "health", "science", "entertainment", "politics", "education", "world"
+  ];
+  
+  try {
+    const requests = categoriesToFetch.map(cat => 
+      axios.get(`https://newsdata.io/api/1/news?apikey=${process.env.NEWS_API_KEY}&country=in&category=${cat}&language=en`)
+        .then(res => (res.data.results || []).map(a => mapNewsdataArticle(a, mapCategory(cat))))
+        .catch(err => {
+          console.error(`Error fetching ${cat}:`, err.message);
+          return [];
+        })
+    );
+
+    const results = await Promise.all(requests);
+    // Flatten the array of arrays into one single list
+    return results.flat();
+  } catch (error) {
+    console.error("Critical Fetch Error:", error.message);
+    return [];
+  }
+};
+
+
+// ✅ FETCH NEWS FROM NEWSDATA.IO
 export const fetchNews = async (
-  category = "general",
+  category = "top",
   country = "in",
-  pageSize = 50,
+  pageSize = 10,   // Newsdata.io free tier max is 10 per request
 ) => {
   try {
-    const url = `https://newsapi.org/v2/top-headlines?country=${country}&category=${category}&pageSize=${pageSize}&apiKey=${process.env.NEWS_API_KEY}`;
+    // Newsdata.io uses "top" instead of "general"
+    const cat = category === "general" ? "top" : category;
+    const url = `https://newsdata.io/api/1/news?apikey=${process.env.NEWS_API_KEY}&country=${country}&category=${cat}&language=en`;
     const response = await axios.get(url);
-    const articles = response.data.articles;
+    const articles = response.data.results || [];
 
     return articles
       .filter((a) => a.title && a.title !== "[Removed]")
-      .map((article) => ({
-        title: article.title,
-        // ✅ FIX: Use description as content fallback — NewsAPI truncates content
-        content: article.content || article.description || article.title,
-        summary: article.description || article.title,
-        url: article.url,
-        source: article.source?.name || "Unknown",
-        author: article.author || "",
-        publishedAt: article.publishedAt,
-        category: mapCategory(category),
-        imageUrl: article.urlToImage || "",
-        externalId: article.url,
-        language: "en",
-      }));
+      .map((a) => mapNewsdataArticle(a, mapCategory(cat)));
   } catch (error) {
     console.error("News API Error:", error.message);
     return [];
   }
 };
 
-// Map NewsAPI category names to our app category names
-function mapCategory(category) {
-  const map = {
-    general: "Top Headlines",
-    technology: "Technology",
-    business: "Business",
-    entertainment: "Entertainment",
-    health: "Health",
-    science: "Science",
-    sports: "Sports",
-  };
-  return map[category.toLowerCase()] || "Top Headlines";
-}
-
 // ✅ FETCH GLOBAL NEWS
 export const fetchGlobalNews = async () => {
   try {
-    const url = `https://newsapi.org/v2/top-headlines?sources=bbc-news,cnn,reuters&apiKey=${process.env.NEWS_API_KEY}`;
+    const url = `https://newsdata.io/api/1/news?apikey=${process.env.NEWS_API_KEY}&language=en&category=top`;
     const response = await axios.get(url);
-    return response.data.articles || [];
+    return (response.data.results || []).map((a) => mapNewsdataArticle(a));
   } catch (error) {
     console.error("Global News API Error:", error.message);
     return [];
@@ -63,9 +108,9 @@ export const fetchGlobalNews = async () => {
 // ✅ FETCH INDIA NEWS
 export const fetchIndiaNews = async () => {
   try {
-    const url = `https://newsapi.org/v2/top-headlines?country=in&apiKey=${process.env.NEWS_API_KEY}`;
+    const url = `https://newsdata.io/api/1/news?apikey=${process.env.NEWS_API_KEY}&country=in&language=en`;
     const response = await axios.get(url);
-    return response.data.articles || [];
+    return (response.data.results || []).map((a) => mapNewsdataArticle(a));
   } catch (error) {
     console.error("India News API Error:", error.message);
     return [];
@@ -75,9 +120,9 @@ export const fetchIndiaNews = async () => {
 // ✅ FETCH TRENDING NEWS
 export const fetchTrendingNews = async () => {
   try {
-    const url = `https://newsapi.org/v2/everything?q=trending&sortBy=popularity&pageSize=20&apiKey=${process.env.NEWS_API_KEY}`;
+    const url = `https://newsdata.io/api/1/news?apikey=${process.env.NEWS_API_KEY}&language=en&category=top&country=in,us`;
     const response = await axios.get(url);
-    return response.data.articles || [];
+    return (response.data.results || []).map((a) => mapNewsdataArticle(a));
   } catch (error) {
     console.error("Trending News API Error:", error.message);
     return [];
@@ -87,21 +132,12 @@ export const fetchTrendingNews = async () => {
 // ✅ FETCH CATEGORY-WISE NEWS
 export const fetchCategoryNews = async (category) => {
   try {
-    const url = `https://newsapi.org/v2/top-headlines?country=in&category=${category}&apiKey=${process.env.NEWS_API_KEY}`;
+    const cat = category === "general" ? "top" : category;
+    const url = `https://newsdata.io/api/1/news?apikey=${process.env.NEWS_API_KEY}&country=in&language=en&category=${cat}`;
     const response = await axios.get(url);
-    return (response.data.articles || [])
+    return (response.data.results || [])
       .filter((a) => a.title && a.title !== "[Removed]")
-      .map((article) => ({
-        title: article.title,
-        content: article.content || article.description || article.title,
-        summary: article.description || article.title,
-        url: article.url,
-        source: article.source?.name || "Unknown",
-        author: article.author || "",
-        publishedAt: article.publishedAt,
-        imageUrl: article.urlToImage || "",
-        externalId: article.url,
-      }));
+      .map((a) => mapNewsdataArticle(a, mapCategory(cat)));
   } catch (error) {
     console.error("Category News Error:", error.message);
     return [];
@@ -159,19 +195,19 @@ export const getLocalNews = async (city, state) => {
     let query = "India";
     if (city) query += ` ${city}`;
     if (state) query += ` ${state}`;
-    const url = `https://newsapi.org/v2/everything?q=${encodeURIComponent(query)}&sortBy=publishedAt&pageSize=20&apiKey=${process.env.NEWS_API_KEY}`;
+    const url = `https://newsdata.io/api/1/news?apikey=${process.env.NEWS_API_KEY}&q=${encodeURIComponent(query)}&country=in&language=en`;
     const response = await axios.get(url);
-    return (response.data.articles || [])
+    return (response.data.results || [])
       .filter((a) => a.title && a.title !== "[Removed]")
       .map((article) => ({
         title: article.title,
         content: article.content || article.description || article.title,
         summary: article.description || "",
-        url: article.url,
-        source: article.source?.name || "Unknown",
-        author: article.author || "",
-        publishedAt: article.publishedAt,
-        imageUrl: article.urlToImage || "",
+        url: article.link || "",
+        source: article.source_name || "Unknown",
+        author: Array.isArray(article.creator) ? article.creator[0] : (article.creator || ""),
+        publishedAt: article.pubDate || new Date().toISOString(),
+        imageUrl: article.image_url || "",
         category: "Local",
         location: { city, state, country: "India" },
       }));
