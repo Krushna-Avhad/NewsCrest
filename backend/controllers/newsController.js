@@ -1,8 +1,59 @@
 // controllers/newsController.js
 import { fetchAllCategories, fetchNews, saveNewsToDatabase } from "../services/newsService.js";
 import { summarizeNews, filterNewsAdvanced } from "../services/aiService.js";
+import { processChatbotQuery } from "../services/aiService.js";
 import User from "../models/User.js";
 import News from "../models/News.js";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+
+// 1. INITIALIZE Gemini (Do this at the TOP)
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+
+// 2. HELPER FUNCTION (Define this before the controller uses it)
+async function processWithGemini(query) {
+  try {
+    // Try the standard model name first
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+
+    const prompt = `
+      You are NewsCrest AI. 
+      - If the user is GREETING you or asking WHO YOU ARE, set "isNewsQuery": false.
+      - If the user is asking for NEWS or specific TOPICS, set "isNewsQuery": true.
+  
+      User message: "${query}"
+  
+      Respond ONLY in JSON:
+      {
+      "isNewsQuery": boolean,
+      "keywords": "search terms",
+      "text": "your response"
+      }
+    `;
+
+    const result = await model.generateContent(prompt);
+    const responseText = result.response.text();
+    
+    // Safety check for empty or malformed AI response
+    if (!responseText) throw new Error("Empty AI response");
+
+    const cleanedJson = responseText.replace(/```json|```/g, "").trim();
+    return JSON.parse(cleanedJson);
+  } catch (error) {
+    console.error("Gemini Logic Error:", error.message);
+    
+    // Determine if we should even bother searching the DB
+    const simpleGreetings = ['hi', 'hello', 'who are you', 'what is this'];
+    const isGreeting = simpleGreetings.some(g => query.toLowerCase().includes(g));
+
+    return { 
+      isNewsQuery: !isGreeting, // If it's a greeting, don't search news
+      keywords: query, 
+      text: isGreeting 
+        ? "I am NewsCrest AI! I can help you find the latest news. What are you interested in today?" 
+        : "I'm having a bit of trouble reaching my AI brain, but let me check the archives for " + query + "..." 
+    };
+  }
+}
 
 export const getMyFeed = async (req, res) => {
   try {
@@ -475,3 +526,108 @@ function getProfileCategories(profileType) {
   
   return profileMap[profileType] || profileMap['General Reader'];
 }
+
+// ✅ The Chatbot Handler
+// newsController.js
+
+// backend/controllers/newsController.js
+
+export const getChatbotResponse = async (req, res) => {
+  try {
+    const { query } = req.body;
+    
+    // 1. Get AI Analysis
+    const aiResponse = await processWithGemini(query); 
+
+    let articles = [];
+    
+    // 2. ONLY search DB if Gemini says it's a news-related question
+    if (aiResponse.isNewsQuery === true) {
+  // Split keywords into an array: "USA Iran War" -> ["USA", "Iran", "War"]
+  const keywordArray = aiResponse.keywords.split(' ').filter(k => k.length > 2);
+
+  articles = await News.find({
+    $or: [
+      // 1. Try to find the specific keywords in Title or Description
+      { title: { $regex: aiResponse.keywords, $options: "i" } },
+      { description: { $regex: aiResponse.keywords, $options: "i" } },
+      // 2. OR match any of the individual words (makes search much broader)
+      { title: { $in: keywordArray.map(k => new RegExp(k, 'i')) } }
+    ]
+  }).sort({ publishedAt: -1 }).limit(3);
+
+  // 3. ONLY fallback to latest news if the AI actually wanted news 
+  // AND we found absolutely nothing.
+  if (articles.length === 0) {
+    console.log("No specific matches for:", aiResponse.keywords);
+    // Optional: Return the latest news but add a message that no specific match was found
+    articles = await News.find().sort({ publishedAt: -1 }).limit(3);
+  }
+}
+    // if (aiResponse.isNewsQuery === true) {
+    //   articles = await News.find({
+    //     $or: [
+    //       { title: { $regex: aiResponse.keywords, $options: "i" } },
+    //       { category: { $regex: aiResponse.keywords, $options: "i" } }
+    //     ]
+    //   }).sort({ publishedAt: -1 }).limit(3);
+
+    //   // 3. Optional: If a news query found 0 results, then show latest news
+    //   if (articles.length === 0) {
+    //     articles = await News.find().sort({ publishedAt: -1 }).limit(3);
+    //   }
+    // } 
+    // 💡 Logic: If isNewsQuery is false (like for "Who are you?"), 
+    // articles remains an empty array [].
+
+    res.json({
+      reply: articles.length > 0 && aiResponse.keywords && !articles.some(a => a.title.toLowerCase().includes(aiResponse.keywords.toLowerCase().split(' ')[0])) 
+             ? `${aiResponse.text} (I couldn't find specific updates on "${aiResponse.keywords}", but here is the latest news:)`
+             : aiResponse.text,
+      articles: articles 
+    });
+
+  } catch (error) {
+    console.error("💥 Chatbot Controller Error:", error);
+    res.status(200).json({ 
+      reply: "I'm having a bit of trouble with my AI brain. How else can I help?", 
+      articles: [] 
+    });
+  }
+};
+
+// export const getChatbotResponse = async (req, res) => {
+//   try {
+//     const { query } = req.body;
+//     const aiResponse = await processWithGemini(query); 
+
+//     let articles = [];
+    
+//     // ONLY search the database if the AI confirms it's a news-related query
+//     if (aiResponse.isNewsQuery) {
+//       articles = await News.find({
+//         $or: [
+//           { title: { $regex: aiResponse.keywords, $options: "i" } },
+//           { category: { $regex: aiResponse.keywords, $options: "i" } }
+//         ]
+//       }).sort({ publishedAt: -1 }).limit(3);
+
+//       // If no specific match, get latest 3 as a helpful backup
+//       if (articles.length === 0) {
+//         articles = await News.find().sort({ publishedAt: -1 }).limit(3);
+//       }
+//     }
+
+//     res.json({
+//       reply: aiResponse.text,
+//       articles: articles // This will be [] if it's just a greeting like "Who are you?"
+//     });
+
+//   } catch (error) {
+//     console.error("💥 Chatbot Controller Error:", error);
+//     res.status(200).json({ 
+//       reply: "I'm having a bit of trouble with my AI brain. How else can I help?", 
+//       articles: [] 
+//     });
+//   }
+// };

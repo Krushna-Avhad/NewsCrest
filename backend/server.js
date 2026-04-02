@@ -20,6 +20,12 @@ import { fetchNews, saveNewsToDatabase } from "./services/newsService.js";
 
 const app = express();
 
+// In backend/server.js
+app.use((req, res, next) => {
+  console.log(`📡 [${new Date().toISOString()}] ${req.method} request to ${req.url}`);
+  next();
+});
+
 app.use(cors());
 app.use(express.json());
 

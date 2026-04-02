@@ -1,6 +1,6 @@
 // src/services/api.js
 // Precisely matched to actual backend controller response shapes
-
+import axios from "axios";
 const BASE_URL =
   (typeof import.meta !== "undefined" && import.meta.env?.VITE_API_BASE_URL) ||
   "http://localhost:5000/api";
@@ -243,40 +243,47 @@ export const tasksAPI = {
 // ─── CHATBOT ──────────────────────────────────────────────────────────────────
 // POST /api/chatbot/start   → { sessionId, message }
 // POST /api/chatbot/message → { message: {type,content,...}, articles, sessionId, suggestedCategories }
+// src/services/api.js
+
+// src/services/api.js
 export const chatbotAPI = {
   startSession: async () => {
-    const data = await request("/chatbot/start", { method: "POST" });
-    // returns { sessionId, message }
-    return data.sessionId;
+    return "session-" + Date.now();
   },
 
-  sendMessage: async (sessionId, message) => {
-    const data = await request("/chatbot/message", {
-      method: "POST",
-      body: JSON.stringify({ sessionId, message }),
-    });
-    // returns { message: {type, content, ...}, articles: [...], sessionId, suggestedCategories }
+  // src/services/api.js
+
+sendMessage: async (sessionId, query) => {
+  try {
+    let token = localStorage.getItem("nc_token");
+
+    // 🔥 THE FIX: If the token is stored as a JSON string (with quotes), 
+    // or if it's the literal string "null", we must fix it.
+    if (!token || token === "undefined" || token === "null") {
+       throw new Error("No valid token found. Please log in again.");
+    }
+
+    // If your login code used JSON.stringify(token), we need to parse it back
+    if (token.startsWith('"')) {
+      token = JSON.parse(token);
+    }
+
+    console.log("🚀 SENDING CLEAN TOKEN:", token.substring(0, 10) + "..."); 
+
+    const response = await axios.post("http://localhost:5000/api/news/chat", 
+      { query }, 
+      { headers: { Authorization: `Bearer ${token}` } } // Space after Bearer is vital!
+    );
+
     return {
-      text: data.message?.content || "",
-      news: (data.articles || []).map(normaliseArticle),
-      sessionId: data.sessionId || sessionId,
+      text: response.data.reply,
+      news: response.data.articles || []
     };
-  },
-
-  getHistory: async (sessionId) => {
-    const data = await request(`/chatbot/history/${sessionId}`);
-    // returns { sessionId, messages, lastActivity }
-    return data.messages || [];
-  },
-
-  getSessions: async () => {
-    const data = await request("/chatbot/sessions");
-    return data.sessions || [];
-  },
-
-  endSession: (sessionId) =>
-    request(`/chatbot/session/${sessionId}`, { method: "DELETE" }),
-  clearAll: () => request("/chatbot/clear", { method: "DELETE" }),
+  } catch (err) {
+    console.error("❌ AXIOS FAILED:", err.message);
+    throw err;
+  }
+}
 };
 
 // ─── COMPARE ──────────────────────────────────────────────────────────────────
