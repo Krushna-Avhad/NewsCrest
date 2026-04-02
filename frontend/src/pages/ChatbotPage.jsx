@@ -34,12 +34,8 @@ export default function ChatbotPage() {
   const { openArticle } = useApp();
   const [sessionId, setSessionId] = useState(null);
   const [messages, setMessages] = useState([
-    {
-      role: "ai",
-      text: "Hello! I am your NewsCrest AI assistant. Ask me about any news topic and I will fetch the most relevant stories for you.",
-      news: [],
-    },
-  ]);
+  { role: 'bot', text: 'Hi! I am your NewsCrest assistant. Ask me anything about the news!' }
+]);
   const [input, setInput] = useState("");
   const [typing, setTyping] = useState(false);
   const bottomRef = useRef(null);
@@ -56,38 +52,33 @@ export default function ChatbotPage() {
       .catch(() => setSessionId("local-" + Date.now()));
   }, []);
 
-  const send = async (q = input) => {
-    if (!q.trim() || typing) return;
-    const userMsg = { role: "user", text: q };
-    setMessages((prev) => [...prev, userMsg]);
-    setInput("");
-    setTyping(true);
+  // Inside ChatbotPage.jsx
+const send = async (queryOverride) => {
+  const queryText = queryOverride || input;
+  if (!queryText.trim()) return;
 
-    try {
-      const sid = sessionId || "local-" + Date.now();
-      const resp = await chatbotAPI.sendMessage(sid, q);
-      if (!sessionId) setSessionId(resp.sessionId || sid);
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "ai",
-          text: resp.text || "Here are the results I found:",
-          news: resp.news || [],
-        },
-      ]);
-    } catch (err) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: "ai",
-          text: "Sorry, I had trouble fetching results. Please try again.",
-          news: [],
-        },
-      ]);
-    } finally {
-      setTyping(false);
-    }
-  };
+  const userMessage = { role: 'user', text: queryText };
+  
+  setMessages(prev => [...prev, userMessage]);
+  setInput(""); 
+  setTyping(true); // 🔥 Fix: Use setTyping, not setLoading
+
+  try {
+    const resp = await chatbotAPI.sendMessage(sessionId, queryText);
+
+    const botMessage = { 
+      role: 'ai', // 🔥 Fix: Match this to "ai" so your CSS/Icons work
+      text: resp.text, 
+      news: resp.news 
+    };
+
+    setMessages(prev => [...prev, botMessage]);
+  } catch (err) {
+    setMessages(prev => [...prev, { role: 'ai', text: "I'm having trouble connecting. Try again?" }]);
+  } finally {
+    setTyping(false); // 🔥 Fix: Use setTyping
+  }
+};
 
   return (
     <AppShell title="AI Chatbot">

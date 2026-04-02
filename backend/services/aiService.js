@@ -6,7 +6,8 @@ dotenv.config();
 
 // Initialize the Gemini API
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+// Use gemini-2.5-flash for the best balance of speed and reliability
+const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
 /**
  * Helper to clean and parse JSON from Gemini's response.
@@ -14,11 +15,23 @@ const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
  */
 const parseAIJSON = (text) => {
   try {
-    const cleanJSON = text.replace(/```json|```/g, "").trim();
+    // 1. Find the first '{' and the last '}' to extract only the JSON object
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    
+    if (!jsonMatch) {
+      throw new Error("No JSON object found in AI response");
+    }
+
+    const cleanJSON = jsonMatch[0].trim();
     return JSON.parse(cleanJSON);
   } catch (err) {
-    console.error("AI JSON Parsing Error:", err.message);
-    throw new Error("Failed to parse AI response as valid JSON.");
+    console.error("AI JSON Parsing Error. Raw Text received:", text);
+    // Return a fallback object so the app doesn't crash
+    return {
+      reply: "I understood your request, but I'm having trouble formatting the news right now.",
+      searchKeywords: [],
+      categorySuggestion: "General"
+    };
   }
 };
 
@@ -67,25 +80,82 @@ export const compareNews = async (item1, item2) => {
   return parseAIJSON(result.response.text());
 };
 
+// export const processChatbotQuery = async (query, user) => {
+//   try {
+//     const prompt = `You are an AI News Assistant. The user asked: "${query}".
+//     Extract search keywords and respond ONLY with a valid JSON object. 
+//     No markdown, no preamble.
+//     {
+//       "reply": "A brief helpful response to the user",
+//       "searchKeywords": ["keyword1", "keyword2"],
+//       "categorySuggestion": "Technology/Sports/etc"
+//     }`;
+
+//     const result = await model.generateContent(prompt);
+//     const responseText = result.response.text();
+//     const aiResponse = parseAIJSON(responseText);
+
+//     // Join keywords with a pipe | for a "OR" search in Regex
+//     const searchString = aiResponse.searchKeywords.join("|");
+//     const articles = await searchNews(searchString, user);
+    
+//     return {
+//       ...aiResponse,
+//       articles
+//     };
+//   } catch (err) {
+//     console.error("Chatbot Processing Error:", err.message);
+//     return {
+//       reply: "I'm having a little trouble connecting to my news brain right now. Can you try asking about a specific topic like 'India' or 'Finance'?",
+//       articles: []
+//     };
+//   }
+// };
+
 export const processChatbotQuery = async (query, user) => {
-  const prompt = `You are an AI News Assistant. The user asked: "${query}".
-  Identify their search intent and extract keywords. Respond ONLY with this JSON format:
-  {
-    "reply": "A brief helpful response to the user",
-    "searchKeywords": ["keyword1", "keyword2"],
-    "categorySuggestion": "Technology/Sports/etc"
-  }`;
+  try {
+    // 1. Define the prompt properly inside the function scope
+    const prompt = `
+      You are an AI News Assistant. 
+      User Location: ${user?.city || "India"}, ${user?.state || "Unknown"}
+      User Interests: ${user?.interests?.join(", ") || "General News"}
+      
+      The user asked: "${query}"
 
-  const result = await model.generateContent(prompt);
-  const aiResponse = parseAIJSON(result.response.text());
+      CRITICAL: Extract search keywords and respond ONLY with this JSON format (no markdown):
+      {
+        "reply": "A brief helpful response to the user",
+        "searchKeywords": ["keyword1", "keyword2"],
+        "categorySuggestion": "Technology"
+      }
+    `;
 
-  // Search the real database based on AI's keywords
-  const articles = await searchNews(aiResponse.searchKeywords.join(" "), user);
-  
-  return {
-    ...aiResponse,
-    articles
-  };
+    // 2. Call the model using the prompt defined right above
+    const result = await model.generateContent(prompt);
+    
+    if (!result.response) {
+      throw new Error("AI returned an empty response");
+    }
+
+    const aiResponse = parseAIJSON(result.response.text());
+
+    // 3. Search logic using the keywords extracted by AI
+    const searchString = aiResponse.searchKeywords?.join("|") || query;
+    const articles = await searchNews(searchString, user);
+    
+    return {
+      ...aiResponse,
+      articles: articles || []
+    };
+  } catch (err) {
+    // This was the error you saw in the console
+    console.error("Chatbot logical failure:", err.message); 
+    
+    return {
+      reply: "I'm having a bit of trouble searching the news right now. Try asking about a specific topic!",
+      articles: []
+    };
+  }
 };
 
 // ── Database Methods ─────────────────────────────────────────────────────────
@@ -93,33 +163,45 @@ export const processChatbotQuery = async (query, user) => {
 export const searchNews = async (keywords, user) => {
   try {
     const limit = 10;
+    
+    // 1. Safety Check: If no keywords, return trending or recent news
+    if (!keywords || keywords.trim() === "") {
+      return await News.find().sort({ publishedAt: -1 }).limit(limit);
+    }
+
+    // 2. Escape special characters to prevent Regex crashes
+    const safeKeywords = keywords.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
     let query = {
       $or: [
-        { title: { $regex: keywords, $options: "i" } },
-        { content: { $regex: keywords, $options: "i" } },
-        { tags: { $in: [new RegExp(keywords, "i")] } },
+        { title: { $regex: safeKeywords, $options: "i" } },
+        { content: { $regex: safeKeywords, $options: "i" } }
       ],
     };
 
-    // Personalized filtering if user has interests
+    // 3. Simplified Personalization
+    // (If the $and logic was too restrictive, this ensures results still show up)
     if (user?.interests?.length > 0) {
       query = {
         $and: [
-          query,
-          {
-            $or: [
-              { category: { $in: user.interests } },
-              { tags: { $in: user.interests } },
-            ],
-          },
-        ],
+          { $or: query.$or }, 
+          { category: { $in: user.interests } }
+        ]
       };
     }
 
-    return await News.find(query).sort({ publishedAt: -1 }).limit(limit);
+    const results = await News.find(query).sort({ publishedAt: -1 }).limit(limit);
+    
+    // 4. Final Fallback: If search is too specific and returns 0, show general news
+    if (results.length === 0) {
+      return await News.find().sort({ publishedAt: -1 }).limit(5);
+    }
+
+    return results;
   } catch (error) {
     console.error("Database Search Error:", error);
-    return [];
+    // Return something so the bot doesn't "error out"
+    return await News.find().sort({ publishedAt: -1 }).limit(3);
   }
 };
 
