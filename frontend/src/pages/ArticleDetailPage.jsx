@@ -1,5 +1,5 @@
 // src/pages/ArticleDetailPage.jsx
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useApp } from "../context/AppContext";
 import AppShell from "../components/layout/AppShell";
 import { NewsCard } from "../components/cards/NewsCard";
@@ -63,11 +63,17 @@ export default function ArticleDetailPage() {
       setSummaryGenerated(!!article.summary);
       setAiSummary(article.summary || "");
       setHatkeText(article.hatkeSummary || "");
+      hatkeCalledRef.current = false;
+      summaryCalledRef.current = false;
     }
   }, [article?.id]);
 
+  const summaryCalledRef = useRef(false);
+
   const generateSummary = async () => {
     if (!article?.id) return;
+    if (summaryCalledRef.current) return;
+    summaryCalledRef.current = true;
     setSummaryLoading(true);
     try {
       const data = await newsAPI.getById(article.id);
@@ -80,8 +86,12 @@ export default function ArticleDetailPage() {
     setSummaryLoading(false);
   };
 
+  const hatkeCalledRef = useRef(false);
+
   const generateHatke = async () => {
     if (!article?.id) return;
+    if (hatkeCalledRef.current) return;
+    hatkeCalledRef.current = true;
     setHatkeLoading(true);
     try {
       const data = await hatkeAPI.generateForArticle(article.id);
