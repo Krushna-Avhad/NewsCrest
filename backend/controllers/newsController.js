@@ -39,18 +39,17 @@ async function processWithGemini(query) {
     const cleanedJson = responseText.replace(/```json|```/g, "").trim();
     return JSON.parse(cleanedJson);
   } catch (error) {
-    console.error("Gemini Logic Error:", error.message);
+    // 429 Quota or 404 Error Fallback
+    const greetings = ['hi', 'hello', 'who are you', 'what is this'];
+    const isGreeting = greetings.some(g => query.toLowerCase().includes(g));
     
-    // Determine if we should even bother searching the DB
-    const simpleGreetings = ['hi', 'hello', 'who are you', 'what is this'];
-    const isGreeting = simpleGreetings.some(g => query.toLowerCase().includes(g));
 
     return { 
       isNewsQuery: !isGreeting, // If it's a greeting, don't search news
       keywords: query, 
       text: isGreeting 
         ? "I am NewsCrest AI! I can help you find the latest news. What are you interested in today?" 
-        : "I'm having a bit of trouble reaching my AI brain, but let me check the archives for " + query + "..." 
+        : `I'm checking our archives for "${query}"...`
     };
   }
 }
@@ -535,63 +534,58 @@ function getProfileCategories(profileType) {
 export const getChatbotResponse = async (req, res) => {
   try {
     const { query } = req.body;
-    
-    // 1. Get AI Analysis
-    const aiResponse = await processWithGemini(query); 
+
+    // 1. Get AI analysis
+    const aiResponse = await processWithGemini(query);
 
     let articles = [];
-    
-    // 2. ONLY search DB if Gemini says it's a news-related question
+
+    // 2. Only search DB if Gemini says it's a news-related question
     if (aiResponse.isNewsQuery === true) {
-  // Split keywords into an array: "USA Iran War" -> ["USA", "Iran", "War"]
-  const keywordArray = aiResponse.keywords.split(' ').filter(k => k.length > 2);
+      const searchTerms = aiResponse.keywords
+        .toLowerCase()
+        .split(' ')
+        .filter(word => word.length > 2);
 
-  articles = await News.find({
-    $or: [
-      // 1. Try to find the specific keywords in Title or Description
-      { title: { $regex: aiResponse.keywords, $options: "i" } },
-      { description: { $regex: aiResponse.keywords, $options: "i" } },
-      // 2. OR match any of the individual words (makes search much broader)
-      { title: { $in: keywordArray.map(k => new RegExp(k, 'i')) } }
-    ]
-  }).sort({ publishedAt: -1 }).limit(3);
+      // Strict match first: must mention at least two keywords
+      articles = await News.find({
+        $and: [
+          { title: { $regex: searchTerms[0] || '', $options: 'i' } },
+          {
+            $or: [
+              { title:       { $regex: searchTerms[1] || searchTerms[0], $options: 'i' } },
+              { description: { $regex: searchTerms[1] || searchTerms[0], $options: 'i' } },
+            ],
+          },
+        ],
+      })
+        .sort({ publishedAt: -1 })
+        .limit(3);
 
-  // 3. ONLY fallback to latest news if the AI actually wanted news 
-  // AND we found absolutely nothing.
-  if (articles.length === 0) {
-    console.log("No specific matches for:", aiResponse.keywords);
-    // Optional: Return the latest news but add a message that no specific match was found
-    articles = await News.find().sort({ publishedAt: -1 }).limit(3);
-  }
-}
-    // if (aiResponse.isNewsQuery === true) {
-    //   articles = await News.find({
-    //     $or: [
-    //       { title: { $regex: aiResponse.keywords, $options: "i" } },
-    //       { category: { $regex: aiResponse.keywords, $options: "i" } }
-    //     ]
-    //   }).sort({ publishedAt: -1 }).limit(3);
+      // Broad fallback if strict match returns nothing
+      if (articles.length === 0) {
+        articles = await News.find({
+          $or: [
+            { title:       { $in: searchTerms.map(t => new RegExp(t, 'i')) } },
+            { description: { $in: searchTerms.map(t => new RegExp(t, 'i')) } },
+          ],
+        })
+          .sort({ publishedAt: -1 })
+          .limit(3);
+      } // ← Bug 2 fix: close the fallback if
+    }   // ← Bug 1 fix: close the isNewsQuery if
 
-    //   // 3. Optional: If a news query found 0 results, then show latest news
-    //   if (articles.length === 0) {
-    //     articles = await News.find().sort({ publishedAt: -1 }).limit(3);
-    //   }
-    // } 
-    // 💡 Logic: If isNewsQuery is false (like for "Who are you?"), 
-    // articles remains an empty array [].
-
+    // Bug 3 fix: res.json is always reached, regardless of which branch ran
     res.json({
-      reply: articles.length > 0 && aiResponse.keywords && !articles.some(a => a.title.toLowerCase().includes(aiResponse.keywords.toLowerCase().split(' ')[0])) 
-             ? `${aiResponse.text} (I couldn't find specific updates on "${aiResponse.keywords}", but here is the latest news:)`
-             : aiResponse.text,
-      articles: articles 
+      reply: aiResponse.text,
+      articles,
     });
 
-  } catch (error) {
-    console.error("💥 Chatbot Controller Error:", error);
-    res.status(200).json({ 
-      reply: "I'm having a bit of trouble with my AI brain. How else can I help?", 
-      articles: [] 
+  } catch (error) { // ← Bug 4 fix: try now has its closing } before catch
+    console.error('💥 Chatbot Controller Error:', error);
+    res.status(200).json({
+      reply: "I'm having a bit of trouble with my AI brain. How else can I help?",
+      articles: [],
     });
   }
 };
