@@ -1,12 +1,21 @@
 import dotenv from "dotenv";
 import News from "../models/News.js";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import Groq from "groq-sdk";
 
 dotenv.config();
 
-// Initialize Gemini
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+// Initialize Groq
+const groq = new Groq({ apiKey: process.env.GEMINI_API_KEY });
+
+// ── Groq helper ──────────────────────────────────────────────────────────────
+async function callGroq(prompt, maxTokens = 300) {
+  const response = await groq.chat.completions.create({
+    model: "llama-3.1-8b-instant",
+    messages: [{ role: "user", content: prompt }],
+    max_tokens: maxTokens,
+  });
+  return response.choices[0]?.message?.content?.trim() || "";
+}
 
 // ── JSON parser ──────────────────────────────────────────────────────────────
 const parseAIJSON = (text) => {
@@ -24,7 +33,7 @@ const parseAIJSON = (text) => {
   }
 };
 
-// ── Mock fallbacks (used when Gemini fails) ──────────────────────────────────
+// ── Mock fallbacks ────────────────────────────────────────────────────────────
 function mockSummary(text) {
   const t = (text || "").toLowerCase();
   if (t.includes("ai") || t.includes("technology")) return "AI and technology continue to advance rapidly, reshaping industries and daily life.";
@@ -51,26 +60,27 @@ export const summarizeNews = async (text) => {
   if (!text) return "No content available to summarize.";
   try {
     const prompt = `Summarize this news article in 2-3 concise bullet points:\n\n${text.substring(0, 2000)}`;
-    const result = await model.generateContent(prompt);
-    return result.response.text().trim();
+    return await callGroq(prompt);
   } catch (err) {
-    console.warn("summarizeNews Gemini failed, using mock:", err.message);
+    console.warn("summarizeNews Groq failed, using mock:", err.message);
     return mockSummary(text);
   }
 };
 
 export const generateHatkeSummary = async (title, content) => {
   try {
-    // content here is the AI summary (2-3 lines) not the full article
-    // this keeps token usage minimal while still giving Gemini enough context
-    const prompt = `Write a short, witty, and funny Hinglish (Hindi + English) summary (2 lines) of this news.
-Use emojis and sound like a viral social media post.
+    const prompt = `You are a witty Indian news reporter with Gen-Z energy.
+Write a 2-line Hinglish (Hindi + English mix) summary of this news.
+Be dramatic and funny. Use emojis. Sprinkle Gen-Z slang naturally only where it fits — don't force it.
+Sound like a viral tweet, not a textbook.
+
 Title: ${title}
-Summary: ${(content || "").substring(0, 300)}`;
-    const result = await model.generateContent(prompt);
-    return result.response.text().trim();
+Summary: ${(content || "").substring(0, 300)}
+
+Only return the 2-line summary, nothing else.`;
+    return await callGroq(prompt, 150);
   } catch (err) {
-    console.warn("generateHatkeSummary Gemini failed, using mock:", err.message);
+    console.warn("generateHatkeSummary Groq failed, using mock:", err.message);
     return mockHatke(title, content);
   }
 };
@@ -80,10 +90,9 @@ export const explainSimply = async (title, content) => {
     const prompt = `Explain this news story as if I am a 10-year-old. Use very simple terms and be brief (2-3 lines):
 Title: ${title}
 Content: ${(content || "").substring(0, 1000)}`;
-    const result = await model.generateContent(prompt);
-    return result.response.text().trim();
+    return await callGroq(prompt);
   } catch (err) {
-    console.warn("explainSimply Gemini failed, using mock:", err.message);
+    console.warn("explainSimply Groq failed, using mock:", err.message);
     return `${title} — This is an important story that affects many people.`;
   }
 };
@@ -101,10 +110,10 @@ export const compareNews = async (item1, item2) => {
 
 Article 1: ${item1.title} - ${(item1.content || "").substring(0, 500)}
 Article 2: ${item2.title} - ${(item2.content || "").substring(0, 500)}`;
-    const result = await model.generateContent(prompt);
-    return parseAIJSON(result.response.text());
+    const text = await callGroq(prompt, 500);
+    return parseAIJSON(text);
   } catch (err) {
-    console.warn("compareNews Gemini failed, using mock:", err.message);
+    console.warn("compareNews Groq failed, using mock:", err.message);
     return {
       similarities: [{ aspect: "relevance", description: "Both cover significant current events with broad public impact" }],
       differences: [{ aspect: "focus", description: `"${item1.title?.slice(0, 40)}..." takes a different angle than "${item2.title?.slice(0, 40)}..."` }],
@@ -131,17 +140,13 @@ CRITICAL: Extract search keywords and respond ONLY with this JSON format (no mar
   "categorySuggestion": "Technology"
 }`;
 
-    const result = await model.generateContent(prompt);
-    if (!result.response) throw new Error("AI returned an empty response");
-
-    const aiResponse = parseAIJSON(result.response.text());
+    const text = await callGroq(prompt, 200);
+    const aiResponse = parseAIJSON(text);
     const searchString = aiResponse.searchKeywords?.join("|") || query;
     const articles = await searchNews(searchString, user);
-
     return { ...aiResponse, articles: articles || [] };
   } catch (err) {
     console.error("Chatbot logical failure:", err.message);
-    // Still try to search DB with raw query
     const articles = await searchNews(query, user).catch(() => []);
     return {
       reply: "I'm having a bit of trouble searching the news right now. Try asking about a specific topic!",
@@ -150,7 +155,7 @@ CRITICAL: Extract search keywords and respond ONLY with this JSON format (no mar
   }
 };
 
-// ── Database Methods ─────────────────────────────────────────────────────────
+// ── Database Methods ──────────────────────────────────────────────────────────
 
 export const searchNews = async (keywords, user) => {
   try {

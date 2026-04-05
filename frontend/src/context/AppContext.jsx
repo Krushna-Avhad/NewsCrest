@@ -42,6 +42,7 @@ export function AppProvider({ children }) {
 
   // Compare / prefs
   const [compareArticle, setCompareArticle] = useState(null);
+  const [chatbotInitialQuery, setChatbotInitialQuery] = useState(null);
   const [readingPrefs, setReadingPrefs] = useState({
     language: "English",
     feedLayout: "Card Grid",
@@ -82,7 +83,7 @@ export function AppProvider({ children }) {
   }, [user]);
 
   // ── Public news — headlines + trending (no auth needed) ────────────────────
-  const loadPublicNews = async () => {
+const loadPublicNews = async () => {
     setNewsLoading(true);
     try {
       const [hl, trending] = await Promise.allSettled([
@@ -91,16 +92,20 @@ export function AppProvider({ children }) {
       ]);
       if (hl.status === "fulfilled" && hl.value.length > 0) {
         setHeadlines(hl.value);
-        // Use headlines as fallback feed until personalised feed loads
         setFeedArticles((prev) => (prev.length === 0 ? hl.value : prev));
       }
       if (trending.status === "fulfilled" && trending.value.length > 0) {
         setTrendingArticles(trending.value);
+      } else {
+        // Fallback — use headlines as trending if trending fetch fails
+        setTrendingArticles((prev) =>
+          prev.length === 0 && hl.status === "fulfilled" ? hl.value : prev
+        );
       }
     } catch (_) {}
     setNewsLoading(false);
   };
-
+  
   // ── Personalised feed (requires auth) ──────────────────────────────────────
   const loadPersonalisedFeed = async () => {
     try {
@@ -252,8 +257,9 @@ export function AppProvider({ children }) {
 
   const updateProfile = useCallback(async (payload) => {
     const data = await authAPI.updateProfile(payload);
-    // updateProfile returns { message, user }
     setUser(data.user || data);
+    // Reload personalised feed with updated interests/profile
+    await loadPersonalisedFeed();
     return data;
   }, []);
 
@@ -436,6 +442,8 @@ export function AppProvider({ children }) {
         compareArticle,
         setCompareArticle,
         openCompareWith,
+        chatbotInitialQuery,
+        setChatbotInitialQuery,
       }}
     >
       {children}
