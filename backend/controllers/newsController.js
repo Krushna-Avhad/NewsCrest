@@ -181,7 +181,27 @@ export const getPersonalizedFeed = async (req, res) => {
 
     // If user has interests, prioritize those categories
     if (user.interests && user.interests.length > 0) {
-      query.category = { $in: user.interests };
+      // Map interest tags to actual DB category names
+      const interestToCategoryMap = {
+        "AI": "Technology",
+        "Startups": "Business",
+        "Tech": "Technology",
+        "Finance": "Finance",
+        "Sports": "Sports",
+        "Science": "Science",
+        "Business": "Business",
+        "Health": "Health",
+        "Entertainment": "Entertainment",
+        "Politics": "Politics",
+        "Education": "Education",
+        "Technology": "Technology",
+      };
+      const mappedCategories = [
+        ...new Set(
+          user.interests.map(i => interestToCategoryMap[i] || i)
+        )
+      ];
+      query.category = { $in: mappedCategories };
     }
 
     // Add location-based news (guard against empty $or which causes MongoDB error)
@@ -255,13 +275,20 @@ export const getTrendingNews = async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 15;
 
-    // Prefer articles marked trending; fall back to most recent
-    let news = await News.find({ trending: true })
-      .sort({ publishedAt: -1, 'engagement.shares': -1 })
+    // Get most viewed + most saved articles from last 7 days as "trending"
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    let news = await News.find({
+      publishedAt: { $gte: sevenDaysAgo }
+    })
+      .sort({ viewCount: -1, 'engagement.saves': -1, publishedAt: -1 })
       .limit(limit);
 
-    if (news.length === 0) {
-      news = await News.find().sort({ publishedAt: -1 }).limit(limit);
+    // Fallback — if less than 5 recent articles, just get most viewed overall
+    if (news.length < 5) {
+      news = await News.find()
+        .sort({ viewCount: -1, 'engagement.saves': -1, publishedAt: -1 })
+        .limit(limit);
     }
 
     res.json({ news });
@@ -273,47 +300,95 @@ export const getTrendingNews = async (req, res) => {
 // ✅ GET CATEGORY NEWS
 export const getCategoryNews = async (req, res) => {
   try {
-    let { category } = req.params;
-    
-    // 1. Formatting: 'finance' -> 'Finance'
-    const formattedCategory = category.charAt(0).toUpperCase() + category.slice(1).toLowerCase();
-
-    // 2. Robust Pagination (From your previous version)
+    const { category } = req.params;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
 
-    // 3. Flexible Query (Merged search terms)
-    let searchTerms = [category, formattedCategory];
-    if (formattedCategory === "Finance") searchTerms.push("Business", "business");
-    if (formattedCategory === "India") searchTerms.push("india", "India News");
-    if (formattedCategory === "Fashion") searchTerms.push("fasion", "fashion", "Lifestyle");
-    if (formattedCategory === "Top" || category === "headlines") searchTerms.push("Top Headlines");
+    const categoryAliasMap = {
+      "good news":     ["Good News", "Health", "Science", "Education", "Entertainment"],
+      "goodnews":      ["Good News", "Health", "Science", "Education", "Entertainment"],
+      "local":         ["Local", "India", "Top Headlines"],
+      "india":         ["India", "Top Headlines", "Politics", "World"],
+      "fashion":       ["Fashion", "Entertainment"],
+      "finance":       ["Finance", "Business"],
+      "business":      ["Business", "Finance"],
+      "top headlines": ["Top Headlines"],
+      "technology":    ["Technology"],
+      "sports":        ["Sports"],
+      "health":        ["Health"],
+      "science":       ["Science"],
+      "entertainment": ["Entertainment"],
+      "politics":      ["Politics"],
+      "education":     ["Education"],
+      "world":         ["World"],
+    };
 
-    const query = { category: { $in: searchTerms } };
+const key = category.toLowerCase().trim();
 
-    // 4. Database Fetch
+// Local news — use user's city/state if logged in
+if (key === "local") {
+  const city = req.user?.city;
+  const state = req.user?.state;
+
+  let localQuery;
+  if (city || state) {
+    const locationOr = [];
+    if (city) locationOr.push(
+      { title: new RegExp(city, 'i') },
+      { content: new RegExp(city, 'i') }
+    );
+    if (state) locationOr.push(
+      { title: new RegExp(state, 'i') },
+      { content: new RegExp(state, 'i') }
+    );
+    localQuery = { $or: locationOr };
+  } else {
+    localQuery = { category: { $in: ["India", "Top Headlines"] } };
+  }
+
+  let news = await News.find(localQuery)
+    .sort({ publishedAt: -1 })
+    .skip(skip)
+    .limit(limit);
+
+  if (news.length === 0) {
+    news = await News.find().sort({ publishedAt: -1 }).skip(skip).limit(limit);
+  }
+
+  const total = await News.countDocuments(localQuery);
+  const totalPages = Math.ceil(total / limit);
+
+  return res.json({
+    news,
+    pagination: { page, limit, total, totalPages,
+      hasNext: page < totalPages, hasPrev: page > 1 }
+  });
+}
+
+const searchTerms = categoryAliasMap[key] || [
+  category,
+  category.charAt(0).toUpperCase() + category.slice(1).toLowerCase()
+];
+
+const query = { category: { $in: searchTerms } };;
+
     let news = await News.find(query)
       .sort({ publishedAt: -1 })
       .skip(skip)
       .limit(limit);
 
-    // 5. Special Fallback for India (If specific India tag is empty)
-    if (news.length === 0 && formattedCategory === "India") {
-      news = await News.find().sort({ publishedAt: -1 }).limit(limit);
+    if (news.length === 0) {
+      news = await News.find().sort({ publishedAt: -1 }).skip(skip).limit(limit);
     }
 
     const total = await News.countDocuments(query);
     const totalPages = Math.ceil(total / limit);
 
-    // 6. Detailed Response
     res.json({
       news,
       pagination: {
-        page,
-        limit,
-        total,
-        totalPages,
+        page, limit, total, totalPages,
         hasNext: page < totalPages,
         hasPrev: page > 1
       }
