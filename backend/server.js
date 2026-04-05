@@ -15,6 +15,7 @@ import searchRoutes  from "./routes/searchRoutes.js";
 import chatbotRoutes from "./routes/chatbotRoutes.js";
 import hatkeRoutes          from "./routes/hatkeRoutes.js";
 import storyTimelineRoutes  from "./routes/storyTimelineRoutes.js";
+import perspectiveRoutes    from "./routes/perspectiveRoutes.js";
 
 import News from "./models/News.js";
 import "./models/UserActivity.js"; // register model for timeline persistence
@@ -40,9 +41,10 @@ app.use("/api/compare", compareRoutes);
 app.use("/api/tasks",   taskRoutes);
 app.use("/api/alerts",  alertRoutes);
 app.use("/api/search",  searchRoutes);
-app.use("/api/chatbot", chatbotRoutes);
-app.use("/api/hatke",   hatkeRoutes);
+app.use("/api/chatbot",   chatbotRoutes);
+app.use("/api/hatke",    hatkeRoutes);
 app.use("/api/timeline", storyTimelineRoutes);
+app.use("/api/perspective", perspectiveRoutes);
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get("/api/health", (req, res) => {

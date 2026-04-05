@@ -391,3 +391,15 @@ export const timelineAPI = {
       body: JSON.stringify({ action, article }),
     }).catch(() => {}),
 };
+
+// ─── PERSPECTIVE ──────────────────────────────────────────────────────────────
+// POST /api/perspective  → { perspectives: [{id, label, emoji, text}] }
+export const perspectiveAPI = {
+  generate: async ({ title, description, category }) => {
+    const data = await request("/perspective", {
+      method: "POST",
+      body: JSON.stringify({ title, description, category }),
+    });
+    return data.perspectives || [];
+  },
+};
