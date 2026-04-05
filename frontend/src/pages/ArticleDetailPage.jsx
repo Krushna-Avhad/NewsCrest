@@ -73,6 +73,21 @@ export default function ArticleDetailPage() {
       setSummaryGenerated(!!article.summary);
       setAiSummary(article.summary || "");
       setHatkeText(article.hatkeSummary || "");
+      hatkeCalledRef.current = false;
+      summaryCalledRef.current = false;
+      setStoryTimeline(null);
+      setPerspectives([]);
+      setPerspectivesVisible(false);
+      setPerspectiveActive(null);
+      // Fetch story timeline for this article
+      if (article.id) {
+        setTimelineLoading(true);
+        timelineAPI
+          .getArticleTimeline(article.id)
+          .then(story => setStoryTimeline(story))
+          .catch(() => {})
+          .finally(() => setTimelineLoading(false));
+      }
     }
   }, [article?.id]);
 
