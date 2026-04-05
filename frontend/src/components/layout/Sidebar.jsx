@@ -12,6 +12,7 @@ import {
   NoteIcon,
   SettingsIcon,
   LaughIcon,
+  TimelineIcon,
 } from "../ui/Icons";
 
 const NAV_ITEMS = [
@@ -28,6 +29,7 @@ const NAV_ITEMS = [
   { id: "notes", label: "Notes", Icon: NoteIcon },
   { section: "Discovery" },
   { id: "hatke", label: "Hatke", Icon: LaughIcon },
+  { id: "timeline", label: "Story Timeline", Icon: TimelineIcon },
   { section: "" },
   { id: "profile", label: "Profile & Settings", Icon: SettingsIcon },
 ];
