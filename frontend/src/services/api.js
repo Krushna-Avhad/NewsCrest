@@ -286,7 +286,7 @@ sendMessage: async (sessionId, query) => {
 }
 };
 
-// ─── COMPARE ──────────────────────────────────────────────────────────────────
+// ─── HATKE ────────────────────────────────────────────────────────────────────
 // POST /api/compare                        → { comparison, message }
 // POST /api/compare/articles/:id1/:id2    → { comparison, message }
 // comparison object has: results { similarities, differences, insight, sentiment, coverage, impact, keyFocus }
@@ -333,4 +333,61 @@ export const hatkeAPI = {
   generateForArticle: (articleId) =>
     request(`/hatke/article/${articleId}/hatke`, { method: "POST" }),
   // returns { articleId, title, originalSummary, hatkeSummary, message }
+};
+
+// ─── STORY TIMELINE ──────────────────────────────────────────────────────────
+export const timelineAPI = {
+  getMyStories: async () => {
+    const data = await request("/timeline/my-stories");
+    return data.stories || [];
+  },
+
+  getStory: async (storyId) => {
+    const data = await request(`/timeline/story/${storyId}`);
+    return data.story || null;
+  },
+
+  getArticleTimeline: async (articleId) => {
+    const data = await request(`/timeline/article/${articleId}`);
+    return data.story || null;
+  },
+
+  getTrending: async () => {
+    const data = await request("/timeline/trending");
+    return data.stories || [];
+  },
+
+  follow:   (storyId) => request(`/timeline/follow/${storyId}`, { method: "POST" }),
+  unfollow: (storyId) => request(`/timeline/follow/${storyId}`, { method: "DELETE" }),
+
+  // Req 4A: manual input → generate timeline
+  generateFromInput: async (input) => {
+    const data = await request("/timeline/generate", {
+      method: "POST",
+      body: JSON.stringify({ input }),
+    });
+    return { story: data.story || null, message: data.message || "" };
+  },
+
+  // Req 3: get ALL articles from DB for the "Select Article" dropdown
+  getAllArticles: async () => {
+    const data = await request("/timeline/all-articles");
+    return data.articles || [];
+  },
+
+  // Req 4B: generate timeline from a selected article (by articleId or title)
+  generateFromHistory: async (payload) => {
+    const data = await request("/timeline/generate-from-history", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    return { story: data.story || null, message: data.message || "" };
+  },
+
+  // Req 1: record read/save activity for persistent history
+  recordActivity: (action, article) =>
+    request("/timeline/record-activity", {
+      method: "POST",
+      body: JSON.stringify({ action, article }),
+    }).catch(() => {}),
 };

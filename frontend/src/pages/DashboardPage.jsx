@@ -1,5 +1,6 @@
 // src/pages/DashboardPage.jsx
 import { useApp } from "../context/AppContext";
+import { useState, useEffect } from "react";
 import AppShell from "../components/layout/AppShell";
 import { NewsCard, HeadlineCard } from "../components/cards/NewsCard";
 import {
@@ -8,6 +9,8 @@ import {
   GoldDivider,
 } from "../components/ui/Primitives";
 import { TrendingIcon, ZapIcon, DiamondIcon } from "../components/ui/Icons";
+import StoryTimelineCard from "../components/timeline/StoryTimelineCard";
+import { timelineAPI } from "../services/api";
 
 const LAYOUT_CLASS = {
   "Card Grid": "grid grid-cols-3 gap-5",
@@ -54,6 +57,27 @@ export default function DashboardPage() {
   const hour = new Date().getHours();
   const greeting =
     hour < 12 ? "Good Morning" : hour < 17 ? "Good Afternoon" : "Good Evening";
+
+  // Story Timeline
+  const [myStories, setMyStories] = useState([]);
+  const [storiesLoading, setStoriesLoading] = useState(false);
+
+  useEffect(() => {
+    if (user) {
+      setStoriesLoading(true);
+      timelineAPI
+        .getMyStories()
+        .then(s => setMyStories(s))
+        .catch(() => {})
+        .finally(() => setStoriesLoading(false));
+    } else {
+      // Show trending stories even without auth
+      timelineAPI
+        .getTrending()
+        .then(s => setMyStories(s.slice(0, 3)))
+        .catch(() => {});
+    }
+  }, [user]);
 
   // Stats from real data
   const savedCount = savedArticles.length;
@@ -135,7 +159,54 @@ export default function DashboardPage() {
 
       <GoldDivider />
 
-      {/* For You + Trending split */}
+      {/* 📌 Continue This Story */}
+      {(storiesLoading || myStories.length > 0) && (
+        <section className="mb-8">
+          <SectionHeader
+            title="Continue This Story"
+            subtitle={user ? "Stories based on what you've read" : "Trending story threads right now"}
+            action={
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setPage("timeline")}
+              >
+                View all
+              </Button>
+            }
+          />
+          {storiesLoading ? (
+            <div className="grid grid-cols-3 gap-4">
+              {[1,2,3].map(i => (
+                <div key={i} className="bg-white rounded-card border border-gold-subtle overflow-hidden animate-pulse">
+                  <div className="h-[90px] bg-smoke" />
+                  <div className="p-3.5">
+                    <div className="h-3 bg-smoke rounded w-3/4 mb-2" />
+                    <div className="h-4 bg-smoke rounded w-full mb-1" />
+                    <div className="h-4 bg-smoke rounded w-4/5 mb-3" />
+                    <div className="flex gap-1">
+                      {[1,2,3,4].map(j => <div key={j} className="w-2 h-2 rounded-full bg-smoke" />)}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-4">
+              {myStories.slice(0, 3).map(story => (
+                <div key={story._id} className="card-reveal">
+                  <StoryTimelineCard
+                    story={story}
+                    onOpen={(s) => setPage("timeline")}
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      <GoldDivider />
       <div className="grid grid-cols-[1fr_300px] gap-6 mb-8">
         <section>
           <SectionHeader

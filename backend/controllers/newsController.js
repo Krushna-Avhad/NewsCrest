@@ -5,6 +5,7 @@ import { processChatbotQuery } from "../services/aiService.js";
 import User from "../models/User.js";
 import News from "../models/News.js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { recordUserActivity } from "../services/storyTimelineService.js";
 
 // 1. INITIALIZE Gemini (Do this at the TOP)
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
@@ -405,6 +406,8 @@ export const getArticle = async (req, res) => {
             readTime: article.readTime
           });
           await user.save();
+          // Persist rich snapshot for timeline generation (non-blocking)
+          recordUserActivity(req.user.id, "read", article).catch(() => {});
         }
       } catch (_) {} // non-critical, don't fail the request
     }
@@ -431,6 +434,10 @@ export const saveArticle = async (req, res) => {
     await News.findByIdAndUpdate(articleId, {
       $inc: { 'engagement.saves': 1 }
     });
+
+    // Persist rich snapshot for timeline generation (non-blocking)
+    const savedArticle = await News.findById(articleId);
+    if (savedArticle) recordUserActivity(userId, "saved", savedArticle).catch(() => {});
 
     res.json({ message: "Article saved successfully" });
   } catch (err) {

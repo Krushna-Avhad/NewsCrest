@@ -13,10 +13,13 @@ import taskRoutes    from "./routes/taskRoutes.js";
 import alertRoutes   from "./routes/alertRoutes.js";
 import searchRoutes  from "./routes/searchRoutes.js";
 import chatbotRoutes from "./routes/chatbotRoutes.js";
-import hatkeRoutes   from "./routes/hatkeRoutes.js";
+import hatkeRoutes          from "./routes/hatkeRoutes.js";
+import storyTimelineRoutes  from "./routes/storyTimelineRoutes.js";
 
 import News from "./models/News.js";
+import "./models/UserActivity.js"; // register model for timeline persistence
 import { fetchNews, saveNewsToDatabase } from "./services/newsService.js";
+import { processArticleIntoTimeline } from "./services/storyTimelineService.js";
 
 const app = express();
 
@@ -39,6 +42,7 @@ app.use("/api/alerts",  alertRoutes);
 app.use("/api/search",  searchRoutes);
 app.use("/api/chatbot", chatbotRoutes);
 app.use("/api/hatke",   hatkeRoutes);
+app.use("/api/timeline", storyTimelineRoutes);
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get("/api/health", (req, res) => {
@@ -204,6 +208,21 @@ mongoose
     // This runs exactly at the start of every hour (e.g., 4:00, 5:00)
     cron.schedule("0 * * * *", () => {
       refreshAllNews();
+    });
+
+    // ✅ Story Timeline: process latest articles into story threads every 2 hours
+    cron.schedule("30 */2 * * *", async () => {
+      console.log("🗞️  Story Timeline: processing latest articles...");
+      try {
+        const recent = await News.find().sort({ publishedAt: -1 }).limit(15);
+        for (const article of recent) {
+          await processArticleIntoTimeline(article);
+          await new Promise(r => setTimeout(r, 600));
+        }
+        console.log("✅ Story Timeline batch complete.");
+      } catch (err) {
+        console.warn("Story Timeline cron error:", err.message);
+      }
     });
 
     // Start the Express server

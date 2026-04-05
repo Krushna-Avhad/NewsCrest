@@ -1,5 +1,5 @@
 // src/pages/SavedPage.jsx
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useApp } from "../context/AppContext";
 import AppShell from "../components/layout/AppShell";
 import { SectionHeader, Pill } from "../components/ui/Primitives";
@@ -9,6 +9,7 @@ import {
   ClockIcon,
   FilterIcon,
 } from "../components/ui/Icons";
+import { timelineAPI } from "../services/api";
 
 function formatSavedTime(isoStr) {
   if (!isoStr) return "";
@@ -32,12 +33,27 @@ const SORT_OPTIONS = [
 ];
 
 export default function SavedPage() {
-  const { openArticle, savedArticles, toggleSaveArticle, readingPrefs } =
+  const { openArticle, savedArticles, toggleSaveArticle, readingPrefs, setPage } =
     useApp();
   const [catFilter, setCatFilter] = useState("All");
   const [sourceFilter, setSourceFilter] = useState("All");
   const [sortBy, setSortBy] = useState("Newest First");
   const [showFilters, setShowFilters] = useState(false);
+
+  // Story updates for saved articles
+  const [savedStories, setSavedStories] = useState([]);
+  const [storiesLoading, setStoriesLoading] = useState(false);
+
+  useEffect(() => {
+    if (savedArticles.length > 0) {
+      setStoriesLoading(true);
+      timelineAPI
+        .getMyStories()
+        .then(stories => setSavedStories(stories.slice(0, 3)))
+        .catch(() => {})
+        .finally(() => setStoriesLoading(false));
+    }
+  }, [savedArticles.length]);
 
   const categories = [
     "All",
@@ -177,6 +193,85 @@ export default function SavedPage() {
         </span>{" "}
         of {savedArticles.length} saved articles
       </div>
+
+      {/* 🔄 Updates on Saved Stories */}
+      {savedArticles.length > 0 && (storiesLoading || savedStories.length > 0) && (
+        <section className="mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-maroon">
+                <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+              </svg>
+              <h3 className="font-playfair text-[16px] font-bold text-text-primary">
+                Updates on Saved Stories
+              </h3>
+            </div>
+            <button
+              onClick={() => setPage("timeline")}
+              className="text-[12px] text-maroon font-medium hover:underline cursor-pointer"
+            >
+              View all →
+            </button>
+          </div>
+
+          {storiesLoading ? (
+            <div className="grid grid-cols-3 gap-3">
+              {[1,2,3].map(i => (
+                <div key={i} className="bg-white rounded-card border border-gold-subtle p-3 animate-pulse">
+                  <div className="h-3 bg-smoke rounded w-1/2 mb-2" />
+                  <div className="h-4 bg-smoke rounded w-full mb-1" />
+                  <div className="h-3 bg-smoke rounded w-3/4" />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-3">
+              {savedStories.map(story => {
+                const latest = story.articles?.[story.articles.length - 1]?.articleId;
+                const newCount = story.newArticlesCount || 0;
+                return (
+                  <button
+                    key={story._id}
+                    onClick={() => setPage("timeline")}
+                    className="bg-white rounded-[12px] border border-gold-subtle p-3.5 text-left hover:border-gold/50 hover:shadow-card transition-all duration-200 cursor-pointer group"
+                  >
+                    <div className="flex items-center gap-1.5 mb-1.5">
+                      <span className="text-[9px] font-bold uppercase text-maroon tracking-[0.5px]">
+                        {story.category}
+                      </span>
+                      {newCount > 0 && (
+                        <span className="text-[9px] font-bold bg-maroon text-white px-1.5 py-0.5 rounded-full animate-pulse">
+                          {newCount} new
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[12.5px] font-semibold text-text-primary leading-[1.35] mb-2 line-clamp-2 group-hover:text-maroon transition-colors duration-200">
+                      {story.title}
+                    </p>
+                    {latest && (
+                      <p className="text-[11px] text-text-muted line-clamp-1">
+                        Latest: {latest.title}
+                      </p>
+                    )}
+                    <div className="flex items-center gap-1 mt-2">
+                      {story.articles?.slice(0, 5).map((a, i) => (
+                        <div key={i} className="flex items-center">
+                          <div className={`w-1.5 h-1.5 rounded-full ${a.isOrigin ? "bg-maroon" : "bg-gold"}`} />
+                          {i < Math.min(story.articles.length, 5) - 1 && <div className="w-2.5 h-[1px] bg-gold/30" />}
+                        </div>
+                      ))}
+                      {story.articles?.length > 5 && (
+                        <span className="text-[9px] text-text-muted ml-1">+{story.articles.length - 5}</span>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
 
       {savedArticles.length === 0 ? (
         <div className="bg-white rounded-card border border-gold-subtle text-center py-16 fade-in">
