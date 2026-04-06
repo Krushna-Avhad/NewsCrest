@@ -1,5 +1,5 @@
 import Comparison from "../models/Comparison.js";
-import { compareNews } from "../services/aiService.js";
+import { compareNews } from "../services/compareService.js";
 import News from "../models/News.js";
 
 // ── Convert AI result → safe DB shape ────────────────────────────────────────
@@ -104,18 +104,18 @@ function buildResponse(saved, rawResults, item1, item2) {
     ? { ...saved.toObject(), results: { ...saved.toObject().results } }
     : { item1, item2, createdAt: new Date().toISOString() };
 
-  // Always include the full rich result so the frontend renders all sections
   base.results = {
     ...(base.results || {}),
-    // Overwrite with full unsanitised AI data for the frontend
     similarities: rawResults.similarities || [],
-    differences: rawResults.differences || [],
-    insights: rawResults.insights || [],
+    differences:  rawResults.differences  || [],
+    insights:     rawResults.insights     || [],
     overallScore: rawResults.overallScore ?? 0.5,
-    sentiment: rawResults.sentiment || {},
-    // Extended fields (not in schema, passed through to frontend only)
+    sentiment:    rawResults.sentiment    || {},
     socialImpact: rawResults.socialImpact || null,
   };
+
+  console.log("✅ [Compare] rawResults received:", JSON.stringify(rawResults, null, 2));
+  console.log("✅ [Compare] base.results built:", JSON.stringify(base.results, null, 2));
 
   return base;
 }
@@ -159,7 +159,10 @@ export const compareArticles = async (req, res) => {
     }
 
     const startTime = Date.now();
+    console.log("🔄 [Compare] Calling compareNews with:", ci1.title, "vs", ci2.title);
     const rawResults = await compareNews(ci1, ci2);
+    console.log("📨 [Compare] compareNews returned type:", typeof rawResults);
+    console.log("📨 [Compare] has similarities?", Array.isArray(rawResults?.similarities));
     const processingTime = Date.now() - startTime;
 
     const saved = await safeSave({

@@ -313,8 +313,8 @@ export const compareAPI = {
       method: "POST",
       body: JSON.stringify({ item1, item2 }),
     });
-    // returns { comparison, message }
-    // comparison.results has the actual AI analysis
+    // Return the full comparison.results — this has ALL AI fields
+    // including socialImpact which is not stored in DB schema
     return data.comparison?.results || data.comparison || data;
   },
 
@@ -322,7 +322,7 @@ export const compareAPI = {
     const data = await request(`/compare/articles/${id1}/${id2}`, {
       method: "POST",
     });
-    // returns { comparison, message }
+    // Same — return results directly, not the DB record
     return data.comparison?.results || data.comparison || data;
   },
 
