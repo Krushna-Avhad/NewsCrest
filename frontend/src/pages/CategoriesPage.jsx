@@ -1,7 +1,9 @@
 // src/pages/CategoriesPage.jsx
+import { useState, useEffect } from "react";
 import { useApp } from "../context/AppContext";
 import AppShell from "../components/layout/AppShell";
 import { SectionHeader } from "../components/ui/Primitives";
+import { newsAPI } from "../services/api";
 import {
   NewspaperIcon,
   BotIcon,
@@ -55,14 +57,14 @@ const CAT_ICONS = {
 };
 
 export default function CategoriesPage() {
-  const { setPage, setActiveCat, feedArticles, headlines } = useApp();
+  const { setPage, setActiveCat } = useApp();
+  const [countMap, setCountMap] = useState({});
 
-  // Derive counts from loaded articles
-  const allArticles = [...(feedArticles || []), ...(headlines || [])];
-  const countMap = {};
-  allArticles.forEach((a) => {
-    if (a.category) countMap[a.category] = (countMap[a.category] || 0) + 1;
-  });
+  useEffect(() => {
+    newsAPI.getCategoryCounts()
+      .then(counts => setCountMap(counts))
+      .catch(() => {});
+  }, []);
 
   const handleCatClick = (name) => {
     setActiveCat(name);

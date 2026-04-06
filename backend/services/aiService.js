@@ -1,6 +1,7 @@
 import dotenv from "dotenv";
 import News from "../models/News.js";
 import Groq from "groq-sdk";
+import { groqCall, groqCallPriority, trackTokens } from "../utils/groqRateLimiter.js";
 
 dotenv.config();
 
@@ -8,13 +9,19 @@ dotenv.config();
 const groq = new Groq({ apiKey: process.env.GEMINI_API_KEY });
 
 // ── Groq helper ──────────────────────────────────────────────────────────────
-async function callGroq(prompt, maxTokens = 300) {
-  const response = await groq.chat.completions.create({
-    model: "llama-3.1-8b-instant",
-    messages: [{ role: "user", content: prompt }],
-    max_tokens: maxTokens,
-  });
-  return response.choices[0]?.message?.content?.trim() || "";
+async function callGroq(prompt, maxTokens = 300, priority = false, label = "") {
+  const fn = async () => {
+    const response = await groq.chat.completions.create({
+      model: "llama-3.1-8b-instant",
+      messages: [{ role: "user", content: prompt }],
+      max_tokens: maxTokens,
+    });
+    // Track token usage to stay under 12,000/min budget
+    const tokens = response.usage?.total_tokens || maxTokens;
+    trackTokens(tokens);
+    return response.choices[0]?.message?.content?.trim() || "";
+  };
+  return priority ? groqCallPriority(fn, label) : groqCall(fn, label);
 }
 
 // ── JSON parser ──────────────────────────────────────────────────────────────
@@ -56,11 +63,31 @@ function mockHatke(title, content) {
 
 // ── AI Methods ───────────────────────────────────────────────────────────────
 
-export const summarizeNews = async (text) => {
+export const summarizeNews = async (text, articleId = null) => {
   if (!text) return "No content available to summarize.";
+
+  // ✅ Cache check — if already summarized, return from DB for free
+  if (articleId) {
+    try {
+      const existing = await News.findById(articleId).select("aiGenerated.summary");
+      if (existing?.aiGenerated?.summary) {
+        return existing.aiGenerated.summary; // Zero Groq calls
+      }
+    } catch (_) {} // non-critical, proceed to generate
+  }
+
   try {
     const prompt = `Summarize this news article in 2-3 concise bullet points:\n\n${text.substring(0, 2000)}`;
-    return await callGroq(prompt);
+    const summary = await callGroq(prompt, 300, false, "summarize");
+
+    // ✅ Persist to DB so future calls are free
+    if (articleId) {
+      News.findByIdAndUpdate(articleId, {
+        $set: { "aiGenerated.summary": summary }
+      }).catch(() => {}); // non-blocking, don't await
+    }
+
+    return summary;
   } catch (err) {
     console.warn("summarizeNews Groq failed, using mock:", err.message);
     return mockSummary(text);
@@ -78,7 +105,7 @@ Title: ${title}
 Summary: ${(content || "").substring(0, 300)}
 
 Only return the 2-line summary, nothing else.`;
-    return await callGroq(prompt, 150);
+    return await callGroq(prompt, 150, true, "hatke"); // priority = true
   } catch (err) {
     console.warn("generateHatkeSummary Groq failed, using mock:", err.message);
     return mockHatke(title, content);
@@ -90,7 +117,7 @@ export const explainSimply = async (title, content) => {
     const prompt = `Explain this news story as if I am a 10-year-old. Use very simple terms and be brief (2-3 lines):
 Title: ${title}
 Content: ${(content || "").substring(0, 1000)}`;
-    return await callGroq(prompt);
+    return await callGroq(prompt, 300, true, "explain"); // priority = true — user triggered
   } catch (err) {
     console.warn("explainSimply Groq failed, using mock:", err.message);
     return `${title} — This is an important story that affects many people.`;
@@ -140,7 +167,7 @@ CRITICAL: Extract search keywords and respond ONLY with this JSON format (no mar
   "categorySuggestion": "Technology"
 }`;
 
-    const text = await callGroq(prompt, 200);
+    const text = await callGroq(prompt, 200, true, "chatbot"); // priority = true — user is waiting
     const aiResponse = parseAIJSON(text);
     const searchString = aiResponse.searchKeywords?.join("|") || query;
     const articles = await searchNews(searchString, user);

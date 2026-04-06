@@ -38,6 +38,8 @@ export default function ArticleDetailPage() {
     readingPrefs,
     feedArticles,
     headlines,
+    setChatbotInitialQuery,
+    setPage,
   } = useApp();
 
   const article = activeArticle;
@@ -661,10 +663,33 @@ export default function ArticleDetailPage() {
               variant="secondary"
               size="sm"
               className="w-full justify-center"
-              onClick={() => {}}
+              onClick={() => {
+                setChatbotInitialQuery(
+                  `Tell me more about: ${article.title}`
+                );
+                setPage("chatbot");
+              }}
             >
               Ask about this article
             </Button>
+
+            {/* Quick topic buttons */}
+            {article.tags?.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-2.5">
+                {article.tags.slice(0, 3).map((tag) => (
+                  <button
+                    key={tag}
+                    onClick={() => {
+                      setChatbotInitialQuery(`Latest news about ${tag}`);
+                      setPage("chatbot");
+                    }}
+                    className="text-[11px] px-2.5 py-1 rounded-full border border-gold/25 text-text-muted bg-smoke hover:border-gold hover:text-maroon hover:bg-lemon transition-all duration-200 cursor-pointer"
+                  >
+                    {tag}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* 4. Add Note */}

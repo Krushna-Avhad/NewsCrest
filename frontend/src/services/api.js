@@ -107,13 +107,18 @@ export const newsAPI = {
     const q = new URLSearchParams(params).toString();
     const data = await request(`/news${q ? `?${q}` : ""}`);
     // returns { news, pagination }
-    return (data.news || []).map(normaliseArticle);
+    return {
+      articles: (data.news || []).map(normaliseArticle),
+      pagination: data.pagination || null,
+    };
   },
 
   getFeed: async () => {
     const data = await request("/news/feed");
-    // returns { news, pagination, ... }
-    return (data.news || []).map(normaliseArticle);
+    // getMyFeed returns { news: [...] } after our fix
+    // data itself might be the array if old response — handle both shapes
+    const articles = Array.isArray(data) ? data : (data.news || []);
+    return articles.map(normaliseArticle);
   },
 
   getHeadlines: async () => {
@@ -128,12 +133,15 @@ export const newsAPI = {
     return (data.news || []).map(normaliseArticle);
   },
 
-  getByCategory: async (category) => {
+  getByCategory: async (category, page = 1, limit = 50, sortBy = "date") => {
     const data = await request(
-      `/news/category/${encodeURIComponent(category)}`,
+      `/news/category/${encodeURIComponent(category)}?page=${page}&limit=${limit}&sortBy=${sortBy}`,
     );
     // returns { news, pagination }
-    return (data.news || []).map(normaliseArticle);
+    return {
+      articles: (data.news || []).map(normaliseArticle),
+      pagination: data.pagination || null,
+    };
   },
 
   getLocal: async () => {
@@ -163,6 +171,12 @@ export const newsAPI = {
   saveArticle: (id) => request(`/news/${id}/save`, { method: "POST" }),
   unsaveArticle: (id) => request(`/news/${id}/save`, { method: "DELETE" }),
   refresh: () => request("/news/refresh", { method: "POST" }),
+
+  // Returns { Technology: 412, Sports: 339, ... }
+  getCategoryCounts: async () => {
+    const data = await request("/news/category-counts");
+    return data.counts || {};
+  },
 };
 
 // ─── SEARCH ───────────────────────────────────────────────────────────────────
@@ -173,7 +187,10 @@ export const searchAPI = {
     const q = new URLSearchParams(params).toString();
     const data = await request(`/search?${q}`);
     // returns { news, query, pagination }
-    return (data.news || []).map(normaliseArticle);
+    return {
+      articles: (data.news || []).map(normaliseArticle),
+      pagination: data.pagination || null,
+    };
   },
 
   getTrending: async () => {

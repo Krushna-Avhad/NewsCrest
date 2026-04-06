@@ -34,6 +34,12 @@ export function AppProvider({ children }) {
   const [localArticles, setLocalArticles] = useState([]);
   const [newsLoading, setNewsLoading] = useState(false);
 
+  // Pagination for "load more" in Explore/Categories
+  const [newsPagination, setNewsPagination] = useState(null);
+  const [newsPage, setNewsPage] = useState(1);
+  const [allArticles, setAllArticles] = useState([]);
+  const [allArticlesLoading, setAllArticlesLoading] = useState(false);
+
   // Saved / Notes / Alerts (require auth)
   const [savedArticles, setSavedArticles] = useState([]);
   const [notes, setNotes] = useState([]);
@@ -86,21 +92,36 @@ export function AppProvider({ children }) {
 const loadPublicNews = async () => {
     setNewsLoading(true);
     try {
-      const [hl, trending] = await Promise.allSettled([
+      const [hl, trending, all] = await Promise.allSettled([
         newsAPI.getHeadlines(),
         newsAPI.getTrending(),
+        newsAPI.getAll({ page: 1, limit: 50 }), // ✅ load 50 articles upfront
       ]);
+
       if (hl.status === "fulfilled" && hl.value.length > 0) {
         setHeadlines(hl.value);
-        setFeedArticles((prev) => (prev.length === 0 ? hl.value : prev));
       }
+
       if (trending.status === "fulfilled" && trending.value.length > 0) {
         setTrendingArticles(trending.value);
-      } else {
-        // Fallback — use headlines as trending if trending fetch fails
-        setTrendingArticles((prev) =>
-          prev.length === 0 && hl.status === "fulfilled" ? hl.value : prev
-        );
+      }
+
+      if (all.status === "fulfilled") {
+        const { articles, pagination } = all.value;
+        setAllArticles(articles);
+        setNewsPagination(pagination);
+        // Use as feedArticles fallback until personalized feed loads
+        if (articles.length > 0) {
+          setFeedArticles((prev) => (prev.length === 0 ? articles : prev));
+          // Use as headlines fallback if headlines fetch failed
+          if (hl.status !== "fulfilled" || hl.value.length === 0) {
+            setHeadlines(articles.slice(0, 10));
+          }
+          // Use as trending fallback
+          if (trending.status !== "fulfilled" || trending.value.length === 0) {
+            setTrendingArticles(articles.slice(0, 15));
+          }
+        }
       }
     } catch (_) {}
     setNewsLoading(false);
@@ -120,6 +141,20 @@ const loadPublicNews = async () => {
         setLocalArticles(local.value);
       }
     } catch (_) {}
+  };
+
+  // ── Load more articles (pagination for Explore page) ───────────────────────
+  const loadMoreArticles = async () => {
+    if (!newsPagination?.hasNext || allArticlesLoading) return;
+    setAllArticlesLoading(true);
+    try {
+      const nextPage = newsPage + 1;
+      const { articles, pagination } = await newsAPI.getAll({ page: nextPage, limit: 50 });
+      setAllArticles((prev) => [...prev, ...articles]);
+      setNewsPagination(pagination);
+      setNewsPage(nextPage);
+    } catch (_) {}
+    setAllArticlesLoading(false);
   };
 
   // ── Full dashboard reload (called manually e.g. pull-to-refresh) ───────────
@@ -422,6 +457,10 @@ const loadPublicNews = async () => {
         localArticles,
         newsLoading,
         loadDashboardData,
+        allArticles,
+        allArticlesLoading,
+        newsPagination,
+        loadMoreArticles,
         savedArticles,
         toggleSaveArticle,
         isArticleSaved,
