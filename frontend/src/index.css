@@ -1,0 +1,190 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: 'Inter', sans-serif;
+    background: #F1EEEE;
+    color: #2A1F1F;
+    line-height: 1.6;
+    overflow-x: hidden;
+  }
+  h1, h2, h3, h4, h5 { font-family: 'Playfair Display', serif; }
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-track { background: #F1EEEE; }
+  ::-webkit-scrollbar-thumb { background: #C1856D; border-radius: 3px; }
+}
+
+@layer components {
+  .section-title-underline::after {
+    content: '';
+    display: block;
+    height: 2px;
+    background: #DAA520;
+    margin-top: 4px;
+    width: 40px;
+    border-radius: 2px;
+  }
+  .divider-gold {
+    height: 1px;
+    background: linear-gradient(90deg, transparent, #DAA520, transparent);
+    margin: 32px 0;
+  }
+  .featured-badge::before {
+    content: 'FEATURED';
+    position: absolute;
+    top: 16px; right: 16px;
+    font-size: 9px; font-weight: 800;
+    letter-spacing: 2px;
+    background: #DAA520; color: #5a1010;
+    padding: 3px 10px; border-radius: 4px;
+  }
+  .nav-active-bar::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 50%;
+    transform: translateY(-50%);
+    width: 3px; height: 18px;
+    background: #DAA520;
+    border-radius: 0 2px 2px 0;
+  }
+  .note-pinned { border-top: 3px solid #DAA520 !important; }
+}
+
+@layer utilities {
+  .font-playfair { font-family: 'Playfair Display', serif; }
+  .font-inter { font-family: 'Inter', sans-serif; }
+  .text-on-maroon { color: #FDF8F3; }
+  .bg-maroon { background-color: #741515; }
+  .bg-maroon-dark { background-color: #5a1010; }
+  .border-gold-subtle { border-color: rgba(218,165,32,0.3); }
+  .border-gold-medium { border-color: rgba(218,165,32,0.5); }
+  .shadow-card { box-shadow: 0 4px 20px rgba(42,31,31,0.07); }
+  .shadow-card-md { box-shadow: 0 8px 32px rgba(42,31,31,0.10); }
+  .shadow-maroon { box-shadow: 0 4px 14px rgba(116,21,21,0.3); }
+}
+
+/* =============================================
+   ANIMATIONS — Elegant, editorial, premium
+   ============================================= */
+
+/* Page entrance — every page fades + slides up */
+@keyframes pageEnter {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.page-enter {
+  animation: pageEnter 0.45s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* Staggered child cards */
+@keyframes cardReveal {
+  from { opacity: 0; transform: translateY(22px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.card-reveal {
+  opacity: 0;
+  animation: cardReveal 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+.card-reveal:nth-child(1)  { animation-delay: 0.05s; }
+.card-reveal:nth-child(2)  { animation-delay: 0.12s; }
+.card-reveal:nth-child(3)  { animation-delay: 0.19s; }
+.card-reveal:nth-child(4)  { animation-delay: 0.26s; }
+.card-reveal:nth-child(5)  { animation-delay: 0.33s; }
+.card-reveal:nth-child(6)  { animation-delay: 0.40s; }
+.card-reveal:nth-child(7)  { animation-delay: 0.47s; }
+.card-reveal:nth-child(8)  { animation-delay: 0.54s; }
+.card-reveal:nth-child(9)  { animation-delay: 0.60s; }
+
+/* Hero / banner slide in from left */
+@keyframes slideInLeft {
+  from { opacity: 0; transform: translateX(-28px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.slide-in-left {
+  animation: slideInLeft 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* Headline list items stagger from right */
+@keyframes slideInRight {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.slide-in-right {
+  opacity: 0;
+  animation: slideInRight 0.45s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+.slide-in-right:nth-child(1) { animation-delay: 0.08s; }
+.slide-in-right:nth-child(2) { animation-delay: 0.16s; }
+.slide-in-right:nth-child(3) { animation-delay: 0.24s; }
+.slide-in-right:nth-child(4) { animation-delay: 0.32s; }
+.slide-in-right:nth-child(5) { animation-delay: 0.40s; }
+
+/* Gold underline expand */
+@keyframes underlineExpand {
+  from { width: 0; }
+  to   { width: 40px; }
+}
+.animate-underline::after {
+  width: 0;
+  animation: underlineExpand 0.6s 0.3s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* Sidebar nav item hover shimmer */
+@keyframes shimmer {
+  0%   { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+/* Gold pulse dot (breaking news) */
+@keyframes pulseDot {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(218,165,32,0.5); }
+  50%       { box-shadow: 0 0 0 6px rgba(218,165,32,0); }
+}
+.pulse-dot { animation: pulseDot 2s ease infinite; }
+
+/* Fade in */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.fade-in { animation: fadeIn 0.4s ease forwards; }
+
+/* Soft pulse */
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.6; }
+}
+.pulse-soft { animation: pulse-soft 2s infinite; }
+
+/* Sidebar logo shimmer line */
+@keyframes goldLine {
+  0%   { transform: scaleX(0); opacity: 0; }
+  60%  { transform: scaleX(1); opacity: 1; }
+  100% { transform: scaleX(1); opacity: 1; }
+}
+.gold-line-animate {
+  transform-origin: left;
+  animation: goldLine 0.8s 0.2s cubic-bezier(0.22,1,0.36,1) forwards;
+}
+
+/* Modal / panel slide up */
+@keyframes panelSlideUp {
+  from { opacity: 0; transform: translateY(16px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+.panel-slide-up {
+  animation: panelSlideUp 0.35s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+/* Number count-up shimmer on stat cards */
+@keyframes statAppear {
+  from { opacity: 0; transform: scale(0.85); }
+  to   { opacity: 1; transform: scale(1); }
+}
+.stat-appear {
+  animation: statAppear 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
