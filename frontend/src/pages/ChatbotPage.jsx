@@ -31,7 +31,7 @@ const QUICK_CMDS = [
 ];
 
 export default function ChatbotPage() {
-  const { openArticle } = useApp();
+  const { openArticle, chatbotInitialQuery, setChatbotInitialQuery } = useApp();
   const [sessionId, setSessionId] = useState(null);
   const [messages, setMessages] = useState([
   { role: 'bot', text: 'Hi! I am your NewsCrest assistant. Ask me anything about the news!' }
@@ -48,8 +48,22 @@ export default function ChatbotPage() {
   useEffect(() => {
     chatbotAPI
       .startSession()
-      .then((id) => setSessionId(id))
-      .catch(() => setSessionId("local-" + Date.now()));
+      .then((id) => {
+        setSessionId(id);
+        // Auto-send initial query from Daily Brief if present
+        if (chatbotInitialQuery) {
+          setChatbotInitialQuery(null);
+          setTimeout(() => send(chatbotInitialQuery), 500);
+        }
+      })
+      .catch(() => {
+        const fallbackId = "local-" + Date.now();
+        setSessionId(fallbackId);
+        if (chatbotInitialQuery) {
+          setChatbotInitialQuery(null);
+          setTimeout(() => send(chatbotInitialQuery), 500);
+        }
+      });
   }, []);
 
   // Inside ChatbotPage.jsx

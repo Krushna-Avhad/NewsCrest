@@ -238,10 +238,15 @@ function StoryDetailPanel({ story, onBack, onArticleClick, userReadIds }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // STORY LIST ITEM
 // ─────────────────────────────────────────────────────────────────────────────
-function StoryListItem({ story, onClick }) {
+function StoryListItem({ story, onClick, onDelete }) {
   const articles = story.articles?.filter(a => a.articleId?.title) || [];
   const latest   = articles[articles.length - 1]?.articleId;
   const newCount = story.newArticlesCount || 0;
+
+  const handleDelete = (e) => {
+    e.stopPropagation(); // prevent card click
+    onDelete(story._id);
+  };
 
   return (
     <div
@@ -269,11 +274,11 @@ function StoryListItem({ story, onClick }) {
             {story.category && (
               <span className="text-[9px] font-bold text-maroon uppercase tracking-[1px]">{story.category}</span>
             )}
+            {story.isSavedStory && (
+              <span className="text-[9px] font-bold bg-gold/15 text-gold-muted border border-gold/30 px-1.5 py-0.5 rounded-full">Saved</span>
+            )}
             {newCount > 0 && (
               <span className="text-[9px] font-bold bg-maroon text-white px-1.5 py-0.5 rounded-full">{newCount} new</span>
-            )}
-            {story.isLocalFallback && (
-              <span className="text-[9px] bg-lemon text-gold-muted border border-gold/30 px-1.5 py-0.5 rounded-full">Offline</span>
             )}
           </div>
           <h3 className="font-playfair text-[14.5px] font-bold text-text-primary leading-[1.3] mb-1.5 group-hover:text-maroon transition-colors duration-200 line-clamp-2">
@@ -298,10 +303,23 @@ function StoryListItem({ story, onClick }) {
           </span>
         </div>
 
-        <div className="flex-shrink-0 self-center">
+        <div className="flex-shrink-0 self-center flex flex-col items-center gap-2">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-text-muted group-hover:text-maroon transition-colors duration-200">
             <polyline points="9 18 15 12 9 6"/>
           </svg>
+          {/* Delete button */}
+          <button
+            onClick={handleDelete}
+            title="Remove from timeline"
+            className="p-1.5 rounded-[6px] text-text-muted hover:text-red-500 hover:bg-red-50 transition-all duration-150 cursor-pointer opacity-0 group-hover:opacity-100"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="3 6 5 6 21 6"/>
+              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+              <path d="M10 11v6M14 11v6"/>
+              <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+            </svg>
+          </button>
         </div>
       </div>
     </div>
@@ -397,8 +415,8 @@ function GeneratePanel({ onStoryGenerated, user }) {
       {/* Mode toggle */}
       <div className="flex border-b border-gold/15">
         {[
-          { id: "input",  label: "✏️ Paste Headline" },
-          { id: "select", label: "📰 Select Article"  },
+          { id: "input",  label: "Paste Headline" },
+          { id: "select", label: "Select Article"  },
         ].map(m => (
           <button
             key={m.id}
@@ -423,7 +441,7 @@ function GeneratePanel({ onStoryGenerated, user }) {
               value={inputText}
               onChange={e => setInputText(e.target.value)}
               onKeyDown={e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) handleInputGenerate(); }}
-              placeholder="e.g. &quot;Oppo Reno phone launch&quot; or &quot;Budget 2025 income tax&quot;…"
+              placeholder="Search news topics (e.g. global conflicts, technology updates, economic policies)"
               rows={3}
               className="w-full px-3.5 py-2.5 border-[1.5px] border-gold/25 rounded-[10px] text-[13px] text-text-primary bg-smoke outline-none focus:border-gold resize-none leading-[1.6] placeholder:text-text-muted transition-all duration-200"
             />
@@ -560,9 +578,10 @@ function GeneratePanel({ onStoryGenerated, user }) {
 // MAIN PAGE — no Trending tab, only "Continue This Story"
 // ─────────────────────────────────────────────────────────────────────────────
 export default function StoryTimelinePage() {
-  const { openArticle, user } = useApp();
+  const { openArticle, user, savedArticles } = useApp();
 
   const [myStories, setMyStories]         = useState([]);
+  const [savedStories, setSavedStories]   = useState([]);
   const [loading, setLoading]             = useState(true);
   const [selectedStory, setSelectedStory] = useState(null);
   const [showGenerator, setShowGenerator] = useState(false);
@@ -570,6 +589,26 @@ export default function StoryTimelinePage() {
   const userReadIds = (user?.readingHistory || []).map(r => r.articleId?.toString());
 
   useEffect(() => { loadStories(); }, [user]);
+
+  // When saved articles change, fetch their timelines in ONE batch call
+  useEffect(() => {
+    if (!savedArticles?.length) { setSavedStories([]); return; }
+    let cancelled = false;
+    const fetchSavedTimelines = async () => {
+      const ids = savedArticles
+        .map(a => a.id || a._id)
+        .filter(Boolean);
+      if (!ids.length) { setSavedStories([]); return; }
+      try {
+        const stories = await timelineAPI.getStoriesForSaved(ids);
+        if (!cancelled) setSavedStories(stories.map(s => ({ ...s, isSavedStory: true })));
+      } catch (_) {
+        if (!cancelled) setSavedStories([]);
+      }
+    };
+    fetchSavedTimelines();
+    return () => { cancelled = true; };
+  }, [savedArticles]);
 
   const loadStories = async () => {
     setLoading(true);
@@ -580,6 +619,12 @@ export default function StoryTimelinePage() {
       }
     } catch (_) {}
     setLoading(false);
+  };
+
+  // Remove a story from either list
+  const handleDeleteStory = (storyId) => {
+    setMyStories(prev => prev.filter(s => s._id !== storyId));
+    setSavedStories(prev => prev.filter(s => s._id !== storyId));
   };
 
   const handleOpenStory = async (story) => {
@@ -663,14 +708,16 @@ export default function StoryTimelinePage() {
       {/* Section header — no tabs, just "Continue This Story" */}
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h3 className="font-playfair text-[19px] font-bold text-text-primary">📌 Continue This Story</h3>
+          <h3 className="font-playfair text-[19px] font-bold text-text-primary">Continue This Story</h3>
           <p className="text-[12.5px] text-text-muted mt-0.5">
             {user ? "Threads based on your reading activity" : "Sign in to see your personalised story threads"}
           </p>
         </div>
-        {myStories.length > 0 && (
-          <span className="text-[11px] text-text-muted">{myStories.length} active threads</span>
-        )}
+        {(() => {
+          const myIds = new Set(myStories.map(s => s._id?.toString()));
+          const total = myStories.length + savedStories.filter(s => !myIds.has(s._id?.toString())).length;
+          return total > 0 ? <span className="text-[11px] text-text-muted">{total} active threads</span> : null;
+        })()}
       </div>
 
       {/* Sign-in state */}
@@ -690,7 +737,7 @@ export default function StoryTimelinePage() {
       )}
 
       {/* Empty + logged in hint */}
-      {user && !loading && myStories.length === 0 && (
+      {user && !loading && myStories.length === 0 && savedStories.length === 0 && (
         <div className="bg-lemon rounded-card border border-gold/30 p-4 mb-5 flex items-start gap-3">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-gold-muted flex-shrink-0 mt-0.5">
             <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
@@ -705,16 +752,41 @@ export default function StoryTimelinePage() {
         </div>
       )}
 
-      {/* Story list */}
+      {/* Story list — reading history stories + saved article timelines */}
       {loading && user ? (
         <SkeletonList />
-      ) : myStories.length > 0 ? (
-        <div className="space-y-3">
-          {myStories.map((story, i) => (
-            <StoryListItem key={story._id || i} story={story} onClick={handleOpenStory} />
-          ))}
-        </div>
-      ) : user ? null : null}
+      ) : (() => {
+        const myIds = new Set(myStories.map(s => s._id?.toString()));
+        const uniqueSaved = savedStories.filter(s => !myIds.has(s._id?.toString()));
+
+        if (!user) return null;
+        if (myStories.length === 0 && uniqueSaved.length === 0) return null;
+
+        return (
+          <div className="space-y-3">
+            {myStories.length > 0 && (
+              <>
+                <p className="text-[11px] font-bold uppercase tracking-[1.5px] text-text-muted px-1 pt-1">
+                  From your reading history
+                </p>
+                {myStories.map((story, i) => (
+                  <StoryListItem key={story._id || i} story={story} onClick={handleOpenStory} onDelete={handleDeleteStory} />
+                ))}
+              </>
+            )}
+            {uniqueSaved.length > 0 && (
+              <>
+                <p className="text-[11px] font-bold uppercase tracking-[1.5px] text-text-muted px-1 pt-2">
+                  From your saved articles
+                </p>
+                {uniqueSaved.map((story, i) => (
+                  <StoryListItem key={story._id || i} story={story} onClick={handleOpenStory} onDelete={handleDeleteStory} />
+                ))}
+              </>
+            )}
+          </div>
+        );
+      })()}
 
     </AppShell>
   );

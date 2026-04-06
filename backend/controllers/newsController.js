@@ -4,54 +4,47 @@ import { summarizeNews, filterNewsAdvanced } from "../services/aiService.js";
 import { processChatbotQuery } from "../services/aiService.js";
 import User from "../models/User.js";
 import News from "../models/News.js";
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import { recordUserActivity } from "../services/storyTimelineService.js";
+import Groq from "groq-sdk";
+import { recordUserActivity, processArticleIntoTimeline } from "../services/storyTimelineService.js";
 
-// 1. INITIALIZE Gemini (Do this at the TOP)
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+// Initialize Groq
+const groq = new Groq({ apiKey: process.env.GROK_API_KEY });
 
-// 2. HELPER FUNCTION (Define this before the controller uses it)
-async function processWithGemini(query) {
+// Chat helper using Groq
+async function processWithGroq(query) {
   try {
-    // Try the standard model name first
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const prompt = `You are NewsCrest AI. 
+- If the user is GREETING you or asking WHO YOU ARE, set "isNewsQuery": false.
+- If the user is asking for NEWS or specific TOPICS, set "isNewsQuery": true.
 
-    const prompt = `
-      You are NewsCrest AI. 
-      - If the user is GREETING you or asking WHO YOU ARE, set "isNewsQuery": false.
-      - If the user is asking for NEWS or specific TOPICS, set "isNewsQuery": true.
-  
-      User message: "${query}"
-  
-      Respond ONLY in JSON:
-      {
-      "isNewsQuery": boolean,
-      "keywords": "search terms",
-      "text": "your response"
-      }
-    `;
+User message: "${query}"
 
-    const result = await model.generateContent(prompt);
-    const responseText = result.response.text();
-    
-    // Safety check for empty or malformed AI response
-    if (!responseText) throw new Error("Empty AI response");
+Respond ONLY in JSON:
+{
+"isNewsQuery": boolean,
+"keywords": "search terms",
+"text": "your response"
+}`;
 
-    const cleanedJson = responseText.replace(/```json|```/g, "").trim();
+    const response = await groq.chat.completions.create({
+      model: "llama-3.1-8b-instant",
+      messages: [{ role: "user", content: prompt }],
+      max_tokens: 200,
+    });
+
+    const raw = response.choices[0]?.message?.content?.trim() || "";
+    if (!raw) throw new Error("Empty AI response");
+    const cleanedJson = raw.replace(/```json|```/g, "").trim();
     return JSON.parse(cleanedJson);
   } catch (error) {
-    console.error("Gemini Logic Error:", error.message);
-    
-    // Determine if we should even bother searching the DB
-    const simpleGreetings = ['hi', 'hello', 'who are you', 'what is this'];
-    const isGreeting = simpleGreetings.some(g => query.toLowerCase().includes(g));
-
-    return { 
-      isNewsQuery: !isGreeting, // If it's a greeting, don't search news
-      keywords: query, 
-      text: isGreeting 
-        ? "I am NewsCrest AI! I can help you find the latest news. What are you interested in today?" 
-        : "I'm having a bit of trouble reaching my AI brain, but let me check the archives for " + query + "..." 
+    const greetings = ["hi", "hello", "who are you", "what is this"];
+    const isGreeting = greetings.some(g => query.toLowerCase().includes(g));
+    return {
+      isNewsQuery: !isGreeting,
+      keywords: query,
+      text: isGreeting
+        ? "I am NewsCrest AI! I can help you find the latest news. What are you interested in today?"
+        : `I'm checking our archives for "${query}"...`,
     };
   }
 }
@@ -183,7 +176,27 @@ export const getPersonalizedFeed = async (req, res) => {
 
     // If user has interests, prioritize those categories
     if (user.interests && user.interests.length > 0) {
-      query.category = { $in: user.interests };
+      // Map interest tags to actual DB category names
+      const interestToCategoryMap = {
+        "AI": "Technology",
+        "Startups": "Business",
+        "Tech": "Technology",
+        "Finance": "Finance",
+        "Sports": "Sports",
+        "Science": "Science",
+        "Business": "Business",
+        "Health": "Health",
+        "Entertainment": "Entertainment",
+        "Politics": "Politics",
+        "Education": "Education",
+        "Technology": "Technology",
+      };
+      const mappedCategories = [
+        ...new Set(
+          user.interests.map(i => interestToCategoryMap[i] || i)
+        )
+      ];
+      query.category = { $in: mappedCategories };
     }
 
     // Add location-based news (guard against empty $or which causes MongoDB error)
@@ -257,13 +270,20 @@ export const getTrendingNews = async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 15;
 
-    // Prefer articles marked trending; fall back to most recent
-    let news = await News.find({ trending: true })
-      .sort({ publishedAt: -1, 'engagement.shares': -1 })
+    // Get most viewed + most saved articles from last 7 days as "trending"
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    let news = await News.find({
+      publishedAt: { $gte: sevenDaysAgo }
+    })
+      .sort({ viewCount: -1, 'engagement.saves': -1, publishedAt: -1 })
       .limit(limit);
 
-    if (news.length === 0) {
-      news = await News.find().sort({ publishedAt: -1 }).limit(limit);
+    // Fallback — if less than 5 recent articles, just get most viewed overall
+    if (news.length < 5) {
+      news = await News.find()
+        .sort({ viewCount: -1, 'engagement.saves': -1, publishedAt: -1 })
+        .limit(limit);
     }
 
     res.json({ news });
@@ -275,47 +295,95 @@ export const getTrendingNews = async (req, res) => {
 // ✅ GET CATEGORY NEWS
 export const getCategoryNews = async (req, res) => {
   try {
-    let { category } = req.params;
-    
-    // 1. Formatting: 'finance' -> 'Finance'
-    const formattedCategory = category.charAt(0).toUpperCase() + category.slice(1).toLowerCase();
-
-    // 2. Robust Pagination (From your previous version)
+    const { category } = req.params;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
 
-    // 3. Flexible Query (Merged search terms)
-    let searchTerms = [category, formattedCategory];
-    if (formattedCategory === "Finance") searchTerms.push("Business", "business");
-    if (formattedCategory === "India") searchTerms.push("india", "India News");
-    if (formattedCategory === "Fashion") searchTerms.push("fasion", "fashion", "Lifestyle");
-    if (formattedCategory === "Top" || category === "headlines") searchTerms.push("Top Headlines");
+    const categoryAliasMap = {
+      "good news":     ["Good News", "Health", "Science", "Education", "Entertainment"],
+      "goodnews":      ["Good News", "Health", "Science", "Education", "Entertainment"],
+      "local":         ["Local", "India", "Top Headlines"],
+      "india":         ["India", "Top Headlines", "Politics", "World"],
+      "fashion":       ["Fashion", "Entertainment"],
+      "finance":       ["Finance", "Business"],
+      "business":      ["Business", "Finance"],
+      "top headlines": ["Top Headlines"],
+      "technology":    ["Technology"],
+      "sports":        ["Sports"],
+      "health":        ["Health"],
+      "science":       ["Science"],
+      "entertainment": ["Entertainment"],
+      "politics":      ["Politics"],
+      "education":     ["Education"],
+      "world":         ["World"],
+    };
 
-    const query = { category: { $in: searchTerms } };
+const key = category.toLowerCase().trim();
 
-    // 4. Database Fetch
+// Local news — use user's city/state if logged in
+if (key === "local") {
+  const city = req.user?.city;
+  const state = req.user?.state;
+
+  let localQuery;
+  if (city || state) {
+    const locationOr = [];
+    if (city) locationOr.push(
+      { title: new RegExp(city, 'i') },
+      { content: new RegExp(city, 'i') }
+    );
+    if (state) locationOr.push(
+      { title: new RegExp(state, 'i') },
+      { content: new RegExp(state, 'i') }
+    );
+    localQuery = { $or: locationOr };
+  } else {
+    localQuery = { category: { $in: ["India", "Top Headlines"] } };
+  }
+
+  let news = await News.find(localQuery)
+    .sort({ publishedAt: -1 })
+    .skip(skip)
+    .limit(limit);
+
+  if (news.length === 0) {
+    news = await News.find().sort({ publishedAt: -1 }).skip(skip).limit(limit);
+  }
+
+  const total = await News.countDocuments(localQuery);
+  const totalPages = Math.ceil(total / limit);
+
+  return res.json({
+    news,
+    pagination: { page, limit, total, totalPages,
+      hasNext: page < totalPages, hasPrev: page > 1 }
+  });
+}
+
+const searchTerms = categoryAliasMap[key] || [
+  category,
+  category.charAt(0).toUpperCase() + category.slice(1).toLowerCase()
+];
+
+const query = { category: { $in: searchTerms } };;
+
     let news = await News.find(query)
       .sort({ publishedAt: -1 })
       .skip(skip)
       .limit(limit);
 
-    // 5. Special Fallback for India (If specific India tag is empty)
-    if (news.length === 0 && formattedCategory === "India") {
-      news = await News.find().sort({ publishedAt: -1 }).limit(limit);
+    if (news.length === 0) {
+      news = await News.find().sort({ publishedAt: -1 }).skip(skip).limit(limit);
     }
 
     const total = await News.countDocuments(query);
     const totalPages = Math.ceil(total / limit);
 
-    // 6. Detailed Response
     res.json({
       news,
       pagination: {
-        page,
-        limit,
-        total,
-        totalPages,
+        page, limit, total, totalPages,
         hasNext: page < totalPages,
         hasPrev: page > 1
       }
@@ -437,7 +505,11 @@ export const saveArticle = async (req, res) => {
 
     // Persist rich snapshot for timeline generation (non-blocking)
     const savedArticle = await News.findById(articleId);
-    if (savedArticle) recordUserActivity(userId, "saved", savedArticle).catch(() => {});
+    if (savedArticle) {
+      recordUserActivity(userId, "saved", savedArticle).catch(() => {});
+      // Add to story timeline so updates appear on the Story Timeline page
+      processArticleIntoTimeline(savedArticle).catch(() => {});
+    }
 
     res.json({ message: "Article saved successfully" });
   } catch (err) {
@@ -542,99 +614,58 @@ function getProfileCategories(profileType) {
 export const getChatbotResponse = async (req, res) => {
   try {
     const { query } = req.body;
-    
-    // 1. Get AI Analysis
-    const aiResponse = await processWithGemini(query); 
+
+    // 1. Get AI analysis
+    const aiResponse = await processWithGroq(query);
 
     let articles = [];
-    
-    // 2. ONLY search DB if Gemini says it's a news-related question
+
+    // 2. Only search DB if Groq says it's a news-related question
     if (aiResponse.isNewsQuery === true) {
-  // Split keywords into an array: "USA Iran War" -> ["USA", "Iran", "War"]
-  const keywordArray = aiResponse.keywords.split(' ').filter(k => k.length > 2);
+      const searchTerms = aiResponse.keywords
+        .toLowerCase()
+        .split(' ')
+        .filter(word => word.length > 2);
 
-  articles = await News.find({
-    $or: [
-      // 1. Try to find the specific keywords in Title or Description
-      { title: { $regex: aiResponse.keywords, $options: "i" } },
-      { description: { $regex: aiResponse.keywords, $options: "i" } },
-      // 2. OR match any of the individual words (makes search much broader)
-      { title: { $in: keywordArray.map(k => new RegExp(k, 'i')) } }
-    ]
-  }).sort({ publishedAt: -1 }).limit(3);
+      // Strict match first: must mention at least two keywords
+      articles = await News.find({
+        $and: [
+          { title: { $regex: searchTerms[0] || '', $options: 'i' } },
+          {
+            $or: [
+              { title:       { $regex: searchTerms[1] || searchTerms[0], $options: 'i' } },
+              { description: { $regex: searchTerms[1] || searchTerms[0], $options: 'i' } },
+            ],
+          },
+        ],
+      })
+        .sort({ publishedAt: -1 })
+        .limit(3);
 
-  // 3. ONLY fallback to latest news if the AI actually wanted news 
-  // AND we found absolutely nothing.
-  if (articles.length === 0) {
-    console.log("No specific matches for:", aiResponse.keywords);
-    // Optional: Return the latest news but add a message that no specific match was found
-    articles = await News.find().sort({ publishedAt: -1 }).limit(3);
-  }
-}
-    // if (aiResponse.isNewsQuery === true) {
-    //   articles = await News.find({
-    //     $or: [
-    //       { title: { $regex: aiResponse.keywords, $options: "i" } },
-    //       { category: { $regex: aiResponse.keywords, $options: "i" } }
-    //     ]
-    //   }).sort({ publishedAt: -1 }).limit(3);
+      // Broad fallback if strict match returns nothing
+      if (articles.length === 0) {
+        articles = await News.find({
+          $or: [
+            { title:       { $in: searchTerms.map(t => new RegExp(t, 'i')) } },
+            { description: { $in: searchTerms.map(t => new RegExp(t, 'i')) } },
+          ],
+        })
+          .sort({ publishedAt: -1 })
+          .limit(3);
+      } // ← Bug 2 fix: close the fallback if
+    }   // ← Bug 1 fix: close the isNewsQuery if
 
-    //   // 3. Optional: If a news query found 0 results, then show latest news
-    //   if (articles.length === 0) {
-    //     articles = await News.find().sort({ publishedAt: -1 }).limit(3);
-    //   }
-    // } 
-    // 💡 Logic: If isNewsQuery is false (like for "Who are you?"), 
-    // articles remains an empty array [].
-
+    // Bug 3 fix: res.json is always reached, regardless of which branch ran
     res.json({
-      reply: articles.length > 0 && aiResponse.keywords && !articles.some(a => a.title.toLowerCase().includes(aiResponse.keywords.toLowerCase().split(' ')[0])) 
-             ? `${aiResponse.text} (I couldn't find specific updates on "${aiResponse.keywords}", but here is the latest news:)`
-             : aiResponse.text,
-      articles: articles 
+      reply: aiResponse.text,
+      articles,
     });
 
-  } catch (error) {
-    console.error("💥 Chatbot Controller Error:", error);
-    res.status(200).json({ 
-      reply: "I'm having a bit of trouble with my AI brain. How else can I help?", 
-      articles: [] 
+  } catch (error) { // ← Bug 4 fix: try now has its closing } before catch
+    console.error('💥 Chatbot Controller Error:', error);
+    res.status(200).json({
+      reply: "I'm having a bit of trouble with my AI brain. How else can I help?",
+      articles: [],
     });
   }
 };
-
-// export const getChatbotResponse = async (req, res) => {
-//   try {
-//     const { query } = req.body;
-//     const aiResponse = await processWithGemini(query); 
-
-//     let articles = [];
-    
-//     // ONLY search the database if the AI confirms it's a news-related query
-//     if (aiResponse.isNewsQuery) {
-//       articles = await News.find({
-//         $or: [
-//           { title: { $regex: aiResponse.keywords, $options: "i" } },
-//           { category: { $regex: aiResponse.keywords, $options: "i" } }
-//         ]
-//       }).sort({ publishedAt: -1 }).limit(3);
-
-//       // If no specific match, get latest 3 as a helpful backup
-//       if (articles.length === 0) {
-//         articles = await News.find().sort({ publishedAt: -1 }).limit(3);
-//       }
-//     }
-
-//     res.json({
-//       reply: aiResponse.text,
-//       articles: articles // This will be [] if it's just a greeting like "Who are you?"
-//     });
-
-//   } catch (error) {
-//     console.error("💥 Chatbot Controller Error:", error);
-//     res.status(200).json({ 
-//       reply: "I'm having a bit of trouble with my AI brain. How else can I help?", 
-//       articles: [] 
-//     });
-//   }
-// };

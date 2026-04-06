@@ -223,7 +223,7 @@ export default function ProfilePage() {
                     />
                   </div>
                 ))}
-                <div>
+                {/* <div>
                   <label className="block text-[12px] font-semibold text-text-secondary mb-2">
                     Interests
                   </label>
@@ -238,7 +238,7 @@ export default function ProfilePage() {
                       </button>
                     ))}
                   </div>
-                </div>
+                </div> */}
                 <div className="flex gap-2 pt-2">
                   <Button
                     variant="primary"
@@ -270,20 +270,68 @@ export default function ProfilePage() {
           </SettingsSection>
 
           {/* Interests display */}
-          {!editing && user?.interests?.length > 0 && (
-            <SettingsSection title="Your Interests">
-              <div className="p-5 flex flex-wrap gap-2">
-                {user.interests.map((i) => (
-                  <span
-                    key={i}
-                    className="px-3 py-1.5 bg-maroon/8 text-maroon rounded-full text-[12.5px] font-medium"
+          <SettingsSection
+            title="Your Interests"
+            action={
+              !editing && (
+                <button
+                  onClick={() => setEditing(true)}
+                  className="flex items-center gap-1.5 text-[12px] font-medium text-maroon hover:underline cursor-pointer"
+                >
+                  <EditIcon size={13} /> Edit
+                </button>
+              )
+            }
+          >
+            {editing ? (
+              <div className="p-5">
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {INTERESTS_ALL.map((i) => (
+                    <button
+                      key={i}
+                      onClick={() => toggleInterest(i)}
+                      className={`px-3 py-1.5 rounded-full text-[12px] font-medium border cursor-pointer transition-all duration-200 ${editForm.interests.includes(i) ? "bg-maroon text-white border-maroon" : "bg-white text-text-secondary border-gold/30 hover:border-gold hover:text-maroon"}`}
+                    >
+                      {i}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={handleSaveProfile}
+                    disabled={savingProfile}
                   >
-                    {i}
-                  </span>
-                ))}
+                    {savingProfile ? "Saving..." : "Save Interests"}
+                  </Button>
+                  <Button variant="ghost" size="sm" onClick={() => setEditing(false)}>
+                    Cancel
+                  </Button>
+                </div>
+                {profileSaved && (
+                  <p className="text-[12px] text-green-600 mt-2">✓ Interests updated</p>
+                )}
               </div>
-            </SettingsSection>
-          )}
+            ) : (
+              <div className="p-5 flex flex-wrap gap-2">
+                {user?.interests?.length > 0 ? (
+                  user.interests.map((i) => (
+                    <span
+                      key={i}
+                      className="px-3 py-1.5 bg-maroon/8 text-maroon rounded-full text-[12.5px] font-medium"
+                    >
+                      {i}
+                    </span>
+                  ))
+                ) : (
+                  <p className="text-[13px] text-text-muted italic">
+                    No interests set. Click Edit to add some.
+                  </p>
+                )}
+              </div>
+            )}
+          </SettingsSection>
 
           {/* Password */}
           <SettingsSection

@@ -1,9 +1,55 @@
 import axios from "axios";
 import News from "../models/News.js";
 
+// ── Sentiment Analysis (keyword-based, no API needed) ────────────────────────
+const POSITIVE_WORDS = [
+  "win", "wins", "won", "victory", "success", "breakthrough", "launch", "launches",
+  "record", "growth", "rise", "rises", "rises", "improve", "improved", "improvement",
+  "achieve", "achieves", "achieved", "achievement", "award", "awards", "celebrate",
+  "celebrates", "celebrated", "celebration", "historic", "milestone", "relief",
+  "recover", "recovery", "recovers", "boost", "boosts", "boosted", "save", "saves",
+  "saved", "rescue", "rescues", "rescued", "hope", "good", "great", "best",
+  "positive", "benefit", "benefits", "help", "helps", "helped", "support",
+  "peace", "agreement", "deal", "approved", "approve", "progress", "upgrade",
+  "innovation", "inspiring", "inspired", "inspire", "happy", "happiness", "joy",
+  "profit", "profits", "surplus", "grant", "grants", "free", "safe", "safety"
+];
+
+const NEGATIVE_WORDS = [
+  "war", "wars", "attack", "attacks", "attacked", "kill", "kills", "killed",
+  "death", "deaths", "dead", "dies", "died", "die", "murder", "murders",
+  "murdered", "crash", "crashes", "crashed", "accident", "accidents", "fire",
+  "fires", "flood", "floods", "disaster", "disasters", "crisis", "crises",
+  "collapse", "collapses", "collapsed", "fail", "fails", "failed", "failure",
+  "loss", "loses", "lost", "drop", "drops", "dropped", "fall", "falls", "fell",
+  "ban", "bans", "banned", "arrest", "arrests", "arrested", "charge", "charges",
+  "charged", "scam", "scams", "fraud", "frauds", "corrupt", "corruption",
+  "protest", "protests", "riot", "riots", "violence", "violent", "threat",
+  "threats", "threatened", "danger", "dangerous", "damage", "damages", "damaged",
+  "destroy", "destroys", "destroyed", "destruction", "explosion", "explode",
+  "bomb", "bombs", "terror", "terrorism", "terrorist", "shortage", "shortages",
+  "inflation", "recession", "debt", "deficit", "poverty", "unemployment",
+  "strike", "strikes", "scandal", "controversy", "controversial", "leak", "leaks"
+];
+
+function detectSentiment(title, content) {
+  const text = `${title || ""} ${content || ""}`.toLowerCase();
+  const words = text.split(/\W+/);
+
+  let positiveScore = 0;
+  let negativeScore = 0;
+
+  for (const word of words) {
+    if (POSITIVE_WORDS.includes(word)) positiveScore++;
+    if (NEGATIVE_WORDS.includes(word)) negativeScore++;
+  }
+
+  if (positiveScore > negativeScore) return "positive";
+  if (negativeScore > positiveScore) return "negative";
+  return "neutral";
+}
+
 // ── Newsdata.io response → internal article shape ────────────────────────────
-// Newsdata.io fields: title, description, content, link, source_name, creator,
-//                     pubDate, category (array), image_url, country (array)
 function mapNewsdataArticle(article, categoryOverride) {
   const category = categoryOverride || mapCategory(article.category?.[0] || "top");
   return {
@@ -26,7 +72,6 @@ function mapCategory(category) {
   const map = {
     top: "Top Headlines",
     technology: "Technology",
-    //business: "Business",
     business: "Finance",
     finance: "Finance",
     politics: "Politics",
@@ -37,22 +82,20 @@ function mapCategory(category) {
     "fashion": "Fashion",
     "fasion": "Fashion",
     sports: "Sports",
-    //india: "India", 
     world: "World",
     general: "Top Headlines",
   };
   return map[(category || "").toLowerCase()] || "Top Headlines";
 }
 
-
 export const fetchAllCategories = async () => {
   const categoriesToFetch = [
     "top", "technology", "business", "sports", "fashion",
     "health", "science", "entertainment", "politics", "education", "world"
   ];
-  
+
   try {
-    const requests = categoriesToFetch.map(cat => 
+    const requests = categoriesToFetch.map(cat =>
       axios.get(`https://newsdata.io/api/1/news?apikey=${process.env.NEWS_API_KEY}&country=in&category=${cat}&language=en`)
         .then(res => (res.data.results || []).map(a => mapNewsdataArticle(a, mapCategory(cat))))
         .catch(err => {
@@ -62,7 +105,6 @@ export const fetchAllCategories = async () => {
     );
 
     const results = await Promise.all(requests);
-    // Flatten the array of arrays into one single list
     return results.flat();
   } catch (error) {
     console.error("Critical Fetch Error:", error.message);
@@ -70,15 +112,13 @@ export const fetchAllCategories = async () => {
   }
 };
 
-
 // ✅ FETCH NEWS FROM NEWSDATA.IO
 export const fetchNews = async (
   category = "top",
   country = "in",
-  pageSize = 10,   // Newsdata.io free tier max is 10 per request
+  pageSize = 10,
 ) => {
   try {
-    // Newsdata.io uses "top" instead of "general"
     const cat = category === "general" ? "top" : category;
     const url = `https://newsdata.io/api/1/news?apikey=${process.env.NEWS_API_KEY}&country=${country}&category=${cat}&language=en`;
     const response = await axios.get(url);
@@ -145,25 +185,24 @@ export const fetchCategoryNews = async (category) => {
 };
 
 // ✅ SAVE NEWS TO DATABASE
-// ✅ FIX: Accept articles with description even if content is null/truncated
 export const saveNewsToDatabase = async (articles) => {
   try {
     const savedNews = [];
     for (const article of articles) {
-      // Skip if no title or URL (minimum required fields)
       if (!article.title || !article.url || article.title === "[Removed]")
         continue;
 
-      // Check duplicate by URL
       const exists = await News.findOne({ url: article.url });
       if (exists) continue;
 
-      // Use description as content if content is empty/truncated
       const content =
         article.content ||
         article.summary ||
         article.description ||
         article.title;
+
+      // Auto-detect sentiment from title + content
+      const sentiment = detectSentiment(article.title, content);
 
       try {
         const newsItem = await News.create({
@@ -174,11 +213,10 @@ export const saveNewsToDatabase = async (articles) => {
           readTime: Math.ceil(content.length / 1000) || 3,
           trending: false,
           importance: "medium",
-          sentiment: "neutral",
+          sentiment,
         });
         savedNews.push(newsItem);
       } catch (err) {
-        // Skip individual article errors (e.g. validation)
         console.warn(`  Skipped article: ${err.message}`);
       }
     }

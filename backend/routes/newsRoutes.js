@@ -1,6 +1,5 @@
 import express from "express";
-import { authenticateToken } from "../middleware/auth.js";
-import { protect } from "../middleware/authMiddleware.js";
+import { authenticateToken, optionalAuth } from "../middleware/auth.js";
 import {
   getAllNews,
   getPersonalizedFeed,
@@ -23,12 +22,9 @@ const router = express.Router();
 router.get("/", getAllNews);
 router.get("/headlines", getTopHeadlines);
 router.get("/trending", getTrendingNews);
-router.get("/category/:category", getCategoryNews);
+router.get("/category/:category", optionalAuth, getCategoryNews);
 router.get("/good", getGoodNewsHandler);
 router.post("/refresh", refreshNews);
-
-// 2. 🔥 AUTH BRIDGE: Everything below this line requires a token
-router.use(protect); // Use 'protect' (the one we fixed above) for everything below
 
 // Authenticated routes only
 router.use(authenticateToken);

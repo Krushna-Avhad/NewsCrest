@@ -34,6 +34,7 @@ export default function DashboardPage() {
   const {
     openArticle,
     setPage,
+    setActiveCat,
     readingPrefs,
     user,
     headlines,
@@ -44,6 +45,7 @@ export default function DashboardPage() {
     alerts,
     alertCount,
     newsLoading,
+    setChatbotInitialQuery,
   } = useApp();
 
   const gridClass =
@@ -272,7 +274,14 @@ export default function DashboardPage() {
               variant="outline"
               size="sm"
               className="mt-3 w-full justify-center"
-              onClick={() => setPage("chatbot")}
+              onClick={() => {
+                setChatbotInitialQuery(
+                  feedArticles.length > 0
+                    ? `Give me a brief summary of today's top ${feedArticles[0]?.category || "news"} stories`
+                    : "Give me a summary of today's top news"
+                );
+                setPage("chatbot");
+              }}
             >
               Ask AI Chatbot
             </Button>
@@ -287,7 +296,7 @@ export default function DashboardPage() {
             title="Local News"
             subtitle={location ? `From ${location}` : "Near You"}
             action={
-              <Button variant="ghost" size="sm">
+              <Button variant="ghost" size="sm" onClick={() => { setActiveCat("Local"); setPage("catdetail"); }}>
                 More local
               </Button>
             }

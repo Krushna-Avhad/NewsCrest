@@ -1,10 +1,10 @@
 // services/storyTimelineService.js
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import Groq from "groq-sdk";
 import StoryTimeline from "../models/StoryTimeline.js";
 import UserActivity from "../models/UserActivity.js";
 import News from "../models/News.js";
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const groq = new Groq({ apiKey: process.env.GROK_API_KEY });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
@@ -82,9 +82,13 @@ export async function extractStoryMeta(article) {
   const content  = article.content  || article.snapshot?.content  || article.summary || article.snapshot?.description || "";
   const category = article.category || article.snapshot?.category || "General";
   try {
-    const model = genAI.getGenerativeModel({ model:"gemini-2.5-flash" });
-    const result = await model.generateContent(`You are a news analysis AI. Extract story metadata.\n\nTitle: "${title}"\nContent: "${content.slice(0,800)}"\nCategory: "${category}"\n\nRespond ONLY in valid JSON:\n{"storyTitle":"concise 5-8 word story name","storySlug":"url-safe-slug-max-60-chars","keywords":["3 to 6 lowercase topic keywords"],"entities":["named people/orgs/places max 5"],"eventLabel":"one of: Origin|Breaking|Update|Announced|Reaction|Development|Outcome|Resolution"}`);
-    const raw = result.response.text().replace(/\`\`\`json|\`\`\`/g,"").trim();
+    const prompt = `You are a news analysis AI. Extract story metadata.\n\nTitle: "${title}"\nContent: "${content.slice(0, 800)}"\nCategory: "${category}"\n\nRespond ONLY in valid JSON:\n{"storyTitle":"concise 5-8 word story name","storySlug":"url-safe-slug-max-60-chars","keywords":["3 to 6 lowercase topic keywords"],"entities":["named people/orgs/places max 5"],"eventLabel":"one of: Origin|Breaking|Update|Announced|Reaction|Development|Outcome|Resolution"}`;
+    const response = await groq.chat.completions.create({
+      model: "llama-3.1-8b-instant",
+      messages: [{ role: "user", content: prompt }],
+      max_tokens: 300,
+    });
+    const raw = (response.choices[0]?.message?.content || "").replace(/```json|```/g, "").trim();
     const p = JSON.parse(raw);
     return {
       storyTitle: p.storyTitle || title.slice(0,60),
@@ -427,10 +431,38 @@ export async function getStoryById(storyId) {
 }
 
 export async function getTimelineForArticle(articleId) {
-  return StoryTimeline.findOne({
-    isActive:true, "articles.articleId":articleId,
-    $expr:{ $gt:[{$size:"$articles"},1] },
-  }).populate({ path:"articles.articleId", model:"News", select:"title summary imageUrl category source publishedAt url readTime" });
+  // 1. Primary: match by articleId in story articles array
+  const byId = await StoryTimeline.findOne({
+    isActive: true,
+    "articles.articleId": articleId,
+    $expr: { $gt: [{ $size: "$articles" }, 1] },
+  }).populate({ path: "articles.articleId", model: "News", select: "title summary imageUrl category source publishedAt url readTime" });
+
+  if (byId) return byId;
+
+  // 2. Fallback: look up the article and try matching by keywords/entities
+  try {
+    const article = await News.findById(articleId).select("title category tags");
+    if (!article) return null;
+
+    const titleWords = (article.title || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .split(/\s+/)
+      .filter((w) => w.length > 3);
+
+    if (!titleWords.length) return null;
+
+    const byKeywords = await StoryTimeline.findOne({
+      isActive: true,
+      $expr: { $gt: [{ $size: "$articles" }, 1] },
+      keywords: { $in: titleWords.slice(0, 4) },
+    }).populate({ path: "articles.articleId", model: "News", select: "title summary imageUrl category source publishedAt url readTime" });
+
+    return byKeywords || null;
+  } catch (_) {
+    return null;
+  }
 }
 
 export async function followStory(storyId, userId, trigger="manual") {

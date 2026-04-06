@@ -384,6 +384,15 @@ export const timelineAPI = {
     return { story: data.story || null, message: data.message || "" };
   },
 
+  // Fetch timelines for a batch of saved article IDs in one request
+  getStoriesForSaved: async (articleIds) => {
+    const data = await request("/timeline/for-saved-articles", {
+      method: "POST",
+      body: JSON.stringify({ articleIds }),
+    });
+    return data.stories || [];
+  },
+
   // Req 1: record read/save activity for persistent history
   recordActivity: (action, article) =>
     request("/timeline/record-activity", {
@@ -393,7 +402,8 @@ export const timelineAPI = {
 };
 
 // ─── PERSPECTIVE ──────────────────────────────────────────────────────────────
-// POST /api/perspective  → { perspectives: [{id, label, emoji, text}] }
+// POST /api/perspective  → { perspectives: [{id, label, text}] }
+// Note: emoji field has been removed; use persona icons in the UI instead.
 export const perspectiveAPI = {
   generate: async ({ title, description, category }) => {
     const data = await request("/perspective", {

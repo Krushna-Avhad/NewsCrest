@@ -14,7 +14,6 @@ import User from "../models/User.js";
 import News from "../models/News.js";
 import StoryTimeline from "../models/StoryTimeline.js";
 import UserActivity from "../models/UserActivity.js";
-// getAllArticlesForDropdown is defined in this file and uses News directly
 
 // ── GET /api/timeline/my-stories ─────────────────────────────────────────────
 export const getMyStories = async (req, res) => {
@@ -46,6 +45,43 @@ export const getArticleTimeline = async (req, res) => {
     const story = await getTimelineForArticle(req.params.articleId);
     res.json({ story: story || null });
   } catch (err) {
+    console.error("getArticleTimeline error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// ── POST /api/timeline/for-saved-articles ────────────────────────────────────
+// Takes an array of article IDs and returns all timelines that contain any of them.
+// This replaces the old N-loop approach on the frontend with a single DB query.
+export const getStoriesForSavedArticles = async (req, res) => {
+  try {
+    const { articleIds } = req.body;
+    if (!articleIds?.length) return res.json({ stories: [] });
+
+    const stories = await StoryTimeline.find({
+      isActive: true,
+      "articles.articleId": { $in: articleIds },
+      $expr: { $gt: [{ $size: "$articles" }, 1] },
+    })
+      .sort({ lastUpdatedAt: -1 })
+      .limit(15)
+      .populate({
+        path: "articles.articleId",
+        model: "News",
+        select: "title summary imageUrl category source publishedAt url readTime",
+      });
+
+    const cleaned = stories
+      .map(s => {
+        const obj = s.toObject();
+        obj.articles = obj.articles.filter(a => a.articleId?.title);
+        return obj;
+      })
+      .filter(s => s.articles.length >= 2);
+
+    res.json({ stories: cleaned });
+  } catch (err) {
+    console.error("getStoriesForSavedArticles error:", err.message);
     res.status(500).json({ error: err.message });
   }
 };
@@ -109,7 +145,11 @@ export const getTrendingStories = async (req, res) => {
     })
       .sort({ lastUpdatedAt: -1 })
       .limit(limit)
-      .populate({ path: "articles.articleId", model: "News", select: "title imageUrl category source publishedAt" });
+      .populate({
+        path: "articles.articleId",
+        model: "News",
+        select: "title imageUrl category source publishedAt",
+      });
 
     const cleaned = stories.map(s => {
       const obj = s.toObject();
@@ -123,44 +163,17 @@ export const getTrendingStories = async (req, res) => {
 };
 
 // ── POST /api/timeline/generate ──────────────────────────────────────────────
-// Manual input: user pastes a headline → system generates a timeline
-// Body: { input: "headline text" }
 export const generateFromInput = async (req, res) => {
   try {
     const { input } = req.body;
     if (!input?.trim()) {
       return res.status(400).json({ error: "Input text is required" });
     }
-
-    const userId = req.user?.id || null;
-
-    // Save this as a manual_input activity so history persists
-    if (userId) {
-      await UserActivity.create({
-        userId,
-        action: "manual_input",
-        articleId: null,
-        snapshot: {
-          title: input.slice(0, 200),
-          description: "",
-          content: input,
-          url: "",
-          imageUrl: "",
-          source: "Manual Input",
-          category: "",
-          publishedAt: new Date(),
-          keywords: [],
-          entities: [],
-        },
-        actedAt: new Date(),
-      });
-    }
-
-    const story = await generateTimelineFromInput(input, userId);
+    const story = await generateTimelineFromInput(input.trim());
     if (!story) {
       return res.json({
         story: null,
-        message: "No related articles found for that topic. Try a different headline.",
+        message: "No related articles found for that topic. Try different keywords.",
       });
     }
     res.json({ story });
@@ -171,8 +184,6 @@ export const generateFromInput = async (req, res) => {
 };
 
 // ── GET /api/timeline/all-articles ───────────────────────────────────────────
-// Returns ALL articles from the News DB for the "Select Article" dropdown.
-// Sorted newest first, limited to 100 for performance.
 export const getAllArticlesForDropdown = async (req, res) => {
   try {
     const articles = await News.find({})
@@ -196,7 +207,7 @@ export const getAllArticlesForDropdown = async (req, res) => {
   }
 };
 
-// ── GET /api/timeline/history (kept for internal use) ────────────────────────
+// ── GET /api/timeline/history ────────────────────────────────────────────────
 export const getUserHistory = async (req, res) => {
   try {
     const activities = await getUserActivityHistory(req.user.id, 40);
@@ -218,23 +229,18 @@ export const getUserHistory = async (req, res) => {
 };
 
 // ── POST /api/timeline/generate-from-history ─────────────────────────────────
-// User picks an article from their history → generate timeline from it
-// Body: { activityId: "...", title: "...", description: "..." }
 export const generateFromHistory = async (req, res) => {
   try {
-    const { activityId, title, description } = req.body;
+    const { articleId, title, description } = req.body;
     if (!title?.trim()) {
       return res.status(400).json({ error: "title is required" });
     }
-
-    // Compose a rich input text for the AI
-    const inputText = `${title}. ${description || ""}`.trim();
-    const story = await generateTimelineFromInput(inputText, req.user.id);
-
+    const searchText = `${title.trim()} ${description || ""}`.trim();
+    const story = await generateTimelineFromInput(searchText);
     if (!story) {
       return res.json({
         story: null,
-        message: "No related articles found for that story.",
+        message: "No related articles found for this story.",
       });
     }
     res.json({ story });
@@ -245,8 +251,6 @@ export const generateFromHistory = async (req, res) => {
 };
 
 // ── POST /api/timeline/record-activity ───────────────────────────────────────
-// Called by the frontend when a user opens (reads) an article
-// Body: { action: "read"|"saved", article: { title, summary, url, ... } }
 export const recordActivity = async (req, res) => {
   try {
     const { action, article } = req.body;

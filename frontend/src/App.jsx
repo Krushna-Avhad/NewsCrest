@@ -16,6 +16,7 @@ import NotesPage from "./pages/NotesPage";
 import HatkePage from "./pages/HatkePage";
 import ProfilePage from "./pages/ProfilePage";
 import StoryTimelinePage from "./pages/StoryTimelinePage";
+import PerspectivesPage from "./pages/PerspectivesPage";
 
 // Pages that require authentication
 const PROTECTED = new Set([
@@ -32,6 +33,7 @@ const PROTECTED = new Set([
   "hatke",
   "timeline",
   "profile",
+  "perspectives",
 ]);
 
 const PAGE_MAP = {
@@ -51,6 +53,7 @@ const PAGE_MAP = {
   hatke: HatkePage,
   timeline: StoryTimelinePage,
   profile: ProfilePage,
+  perspectives: PerspectivesPage,
 };
 
 function Router() {

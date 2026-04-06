@@ -75,11 +75,19 @@ export const generateHatkeForArticle = async (req, res) => {
 
     // Generate hatke summary if not already exists
     if (!article.hatkeSummary) {
-      const hatkeSummary = await generateHatkeSummary(article.title, article.content);
-      
+      // Use AI summary if available — much shorter than full content, saves tokens
+      const sourceText = article.summary || article.content;
+      const hatkeSummary = await generateHatkeSummary(article.title, sourceText);
+
+      // Use findByIdAndUpdate to avoid aiGenerated subdoc Mongoose issues entirely
+      await News.findByIdAndUpdate(article._id, {
+        $set: {
+          hatkeSummary,
+          "aiGenerated.hatkeSummary": true
+        }
+      });
+
       article.hatkeSummary = hatkeSummary;
-      article.aiGenerated.hatkeSummary = true;
-      await article.save();
     }
 
     res.json({
@@ -90,6 +98,7 @@ export const generateHatkeForArticle = async (req, res) => {
       message: "Hatke summary generated successfully"
     });
   } catch (err) {
+    console.error("generateHatkeForArticle error:", err.message);
     res.status(500).json({ error: err.message });
   }
 };
@@ -172,12 +181,17 @@ export const generateAISummary = async (req, res) => {
     }
 
     // Generate AI summary if not already exists
-    if (!article.summary || !article.aiGenerated.summary) {
+    if (!article.summary || !article.aiGenerated?.summary) {
       const aiSummary = await summarizeNews(article.content);
-      
+
+      await News.findByIdAndUpdate(article._id, {
+        $set: {
+          summary: aiSummary,
+          "aiGenerated.summary": true
+        }
+      });
+
       article.summary = aiSummary;
-      article.aiGenerated.summary = true;
-      await article.save();
     }
 
     res.json({
