@@ -54,7 +54,7 @@ app.get("/api/health", (req, res) => {
     timestamp: new Date().toISOString(),
     env: {
       hasNewsApiKey: !!process.env.NEWS_API_KEY,
-      hasGeminiKey:  !!process.env.GEMINI_API_KEY,
+      hasGrokKey:    !!process.env.GROK_API_KEY,
       hasMongoUri:   !!process.env.MONGO_URI,
       hasJwtSecret:  !!process.env.JWT_SECRET,
     },

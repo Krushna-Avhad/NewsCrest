@@ -1,4 +1,5 @@
 // src/pages/ArticleDetailPage.jsx
+// Merged: krushna (Speech + Timeline + Chatbot) + prachi (PERSONA_ICONS)
 import { useState, useEffect, useRef } from "react";
 import { useApp } from "../context/AppContext";
 import AppShell from "../components/layout/AppShell";
@@ -28,7 +29,18 @@ const TEXT_SIZES = {
 const DEFAULT_SOURCE_INFO =
   "This is a verified and credible media source known for accurate, fact-checked reporting across its primary coverage areas.";
 
-// ── Mic button ────────────────────────────────────────────────────────────────
+// ── Persona icons (Prachi's addition) ────────────────────────────────────────
+const PERSONA_ICONS = {
+  student:     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>,
+  investor:    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>,
+  politician:  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>,
+  citizen:     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
+  it_employee: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>,
+  business:    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>,
+  homemaker:   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>,
+};
+
+// ── Mic button (krushna's feature) ────────────────────────────────────────────
 function MicButton({ onPress, isSpeaking, disabled }) {
   return (
     <button
@@ -36,10 +48,9 @@ function MicButton({ onPress, isSpeaking, disabled }) {
       disabled={disabled}
       title={isSpeaking ? "Stop reading" : "Read article aloud"}
       className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] text-[12px] font-medium border transition-all duration-200
-        ${
-          isSpeaking
-            ? "bg-maroon text-white border-maroon shadow-[0_0_0_3px_rgba(116,21,21,0.18)] animate-pulse"
-            : "text-text-secondary border-gold/25 hover:bg-smoke hover:border-gold/50"
+        ${isSpeaking
+          ? "bg-maroon text-white border-maroon shadow-[0_0_0_3px_rgba(116,21,21,0.18)] animate-pulse"
+          : "text-text-secondary border-gold/25 hover:bg-smoke hover:border-gold/50"
         }
         ${disabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer"}`}
     >
@@ -54,16 +65,7 @@ function MicButton({ onPress, isSpeaking, disabled }) {
         </>
       ) : (
         <>
-          <svg
-            width="13"
-            height="13"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
             <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
             <line x1="12" y1="19" x2="12" y2="23" />
@@ -95,7 +97,7 @@ export default function ArticleDetailPage() {
   const saved = isArticleSaved(article?.id);
   const textSize = TEXT_SIZES[readingPrefs?.textSize] || TEXT_SIZES.Medium;
 
-  // Speech (teammate's feature)
+  // Speech (krushna's feature)
   const { speak, stop, isSpeaking, isSupported } = useSpeechSynthesis();
 
   const handleListen = () => {
@@ -122,15 +124,18 @@ export default function ArticleDetailPage() {
   const [hatkeText, setHatkeText] = useState(article?.hatkeSummary || "");
   const [hatkeLoading, setHatkeLoading] = useState(false);
 
-  // Perspectives (your feature)
+  // Perspectives
   const [perspectives, setPerspectives] = useState([]);
   const [perspectivesLoading, setPerspectivesLoading] = useState(false);
   const [perspectivesVisible, setPerspectivesVisible] = useState(false);
   const [perspectiveActive, setPerspectiveActive] = useState(null);
 
-  // Story Timeline (your feature)
+  // Story Timeline (krushna's feature)
   const [storyTimeline, setStoryTimeline] = useState(null);
   const [timelineLoading, setTimelineLoading] = useState(false);
+
+  const summaryCalledRef = useRef(false);
+  const hatkeCalledRef = useRef(false);
 
   useEffect(() => {
     if (article) {
@@ -154,7 +159,6 @@ export default function ArticleDetailPage() {
     }
   }, [article?.id]);
 
-  const summaryCalledRef = useRef(false);
   const generateSummary = async () => {
     if (!article?.id || summaryCalledRef.current) return;
     summaryCalledRef.current = true;
@@ -170,7 +174,6 @@ export default function ArticleDetailPage() {
     setSummaryLoading(false);
   };
 
-  const hatkeCalledRef = useRef(false);
   const generateHatke = async () => {
     if (!article?.id || hatkeCalledRef.current) return;
     hatkeCalledRef.current = true;
@@ -194,9 +197,13 @@ export default function ArticleDetailPage() {
       });
       setPerspectives(result);
       if (result.length > 0) setPerspectiveActive(result[0].id);
-    } catch (_) { setPerspectives([]); }
+    } catch (_) {
+      setPerspectives([]);
+    }
     setPerspectivesLoading(false);
   };
+
+  const handleOpenPerspectivesPage = () => setPage("perspectives");
 
   // Share
   const [shareMsg, setShareMsg] = useState("");
@@ -244,8 +251,10 @@ export default function ArticleDetailPage() {
   return (
     <AppShell title="Article">
       <div className="grid grid-cols-[1fr_360px] gap-7">
+
         {/* ── Main content ── */}
         <div className="slide-in-left">
+
           {/* Category + tags */}
           <div className="flex items-center gap-3 mb-5">
             <NewsTag>{article.category}</NewsTag>
@@ -321,7 +330,7 @@ export default function ArticleDetailPage() {
             </a>
           )}
 
-          {/* ── Action bar: Save → Share → Compare → View Perspectives → Listen ── */}
+          {/* ── Action bar ── */}
           <div className="flex items-center gap-2 mb-8 pb-6 border-b border-gold/20 flex-wrap">
             <Button variant={saved ? "primary" : "secondary"} size="sm" onClick={() => toggleSaveArticle(article)}>
               <BookmarkIcon size={15} /> {saved ? "Saved" : "Save"}
@@ -348,22 +357,36 @@ export default function ArticleDetailPage() {
               )}
               {perspectivesLoading ? "Loading…" : perspectivesVisible ? "Hide Perspectives" : "View Perspectives"}
             </Button>
+            {/* Listen button — krushna's speech feature */}
             {isSupported && (
               <MicButton onPress={handleListen} isSpeaking={isSpeaking} disabled={false} />
             )}
           </div>
 
-          {/* 👁 Perspectives Panel */}
+          {/* ── Perspectives Panel (both branches) ── */}
           {perspectivesVisible && (
             <section className="mb-8">
-              <div className="flex items-center gap-2 mb-4">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-maroon">
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                  <circle cx="12" cy="12" r="3"/>
-                </svg>
-                <h3 className="font-playfair text-[19px] font-bold text-text-primary">
-                  View Through Different Lenses
-                </h3>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-maroon">
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                    <circle cx="12" cy="12" r="3"/>
+                  </svg>
+                  <h3 className="font-playfair text-[19px] font-bold text-text-primary">
+                    View Through Different Lenses
+                  </h3>
+                </div>
+                {perspectives.length > 0 && (
+                  <button
+                    onClick={handleOpenPerspectivesPage}
+                    className="flex items-center gap-1.5 text-[11px] font-semibold text-maroon hover:underline cursor-pointer"
+                  >
+                    View Full Page
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="9 18 15 12 9 6"/>
+                    </svg>
+                  </button>
+                )}
               </div>
 
               {perspectivesLoading ? (
@@ -380,23 +403,31 @@ export default function ArticleDetailPage() {
                 </div>
               ) : perspectives.length > 0 ? (
                 <div className="bg-white rounded-card border border-gold-subtle shadow-card overflow-hidden">
+                  {/* Persona tab strip — uses PERSONA_ICONS (prachi) */}
                   <div className="flex gap-1.5 p-3 border-b border-gold/15 overflow-x-auto">
                     {perspectives.map(p => (
                       <button key={p.id} onClick={() => setPerspectiveActive(p.id)}
                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[11px] font-semibold whitespace-nowrap flex-shrink-0 transition-all duration-150 cursor-pointer ${
                           perspectiveActive === p.id ? "bg-maroon text-white" : "bg-smoke text-text-secondary hover:bg-wheat hover:text-text-primary"
                         }`}>
-                        <span>{p.emoji}</span><span>{p.label}</span>
+                        <span className={perspectiveActive === p.id ? "text-white/80" : "text-text-muted"}>
+                          {PERSONA_ICONS[p.id] || p.emoji}
+                        </span>
+                        <span>{p.label}</span>
                       </button>
                     ))}
                   </div>
+
+                  {/* Active perspective content */}
                   {(() => {
                     const active = perspectives.find(p => p.id === perspectiveActive);
                     if (!active) return null;
                     return (
                       <div className="p-5">
                         <div className="flex items-center gap-2.5 mb-3">
-                          <span className="text-[22px]">{active.emoji}</span>
+                          <div className="w-8 h-8 rounded-[8px] bg-maroon/8 flex items-center justify-center text-maroon flex-shrink-0">
+                            {PERSONA_ICONS[active.id] || active.emoji}
+                          </div>
                           <div>
                             <p className="text-[10px] font-bold uppercase tracking-[1.5px] text-gold-muted">As a</p>
                             <p className="text-[15px] font-bold text-text-primary font-playfair">{active.label}</p>
@@ -406,6 +437,8 @@ export default function ArticleDetailPage() {
                       </div>
                     );
                   })()}
+
+                  {/* All perspectives list */}
                   <div className="border-t border-gold/15 px-4 py-3">
                     <p className="text-[10px] font-bold uppercase tracking-[1.5px] text-text-muted mb-2.5">All Perspectives</p>
                     <div className="grid grid-cols-1 gap-2">
@@ -414,7 +447,9 @@ export default function ArticleDetailPage() {
                           className={`flex items-start gap-3 p-2.5 rounded-[10px] text-left transition-all duration-150 cursor-pointer ${
                             perspectiveActive === p.id ? "bg-maroon/5 border border-maroon/20" : "hover:bg-smoke border border-transparent"
                           }`}>
-                          <span className="text-[16px] flex-shrink-0 mt-0.5">{p.emoji}</span>
+                          <div className="w-6 h-6 rounded-[6px] bg-smoke flex items-center justify-center text-text-secondary flex-shrink-0 mt-0.5">
+                            {PERSONA_ICONS[p.id] || p.emoji}
+                          </div>
                           <div className="min-w-0">
                             <span className="text-[11px] font-bold text-text-primary block mb-0.5">{p.label}</span>
                             <span className="text-[12px] text-text-secondary leading-[1.5] line-clamp-2">{p.text}</span>
@@ -422,6 +457,12 @@ export default function ArticleDetailPage() {
                         </button>
                       ))}
                     </div>
+                    <button
+                      onClick={handleOpenPerspectivesPage}
+                      className="mt-3 w-full py-2 rounded-[10px] text-[12px] font-semibold text-maroon bg-maroon/5 hover:bg-maroon/10 border border-maroon/15 transition-all duration-150 cursor-pointer"
+                    >
+                      Open Full Perspectives View
+                    </button>
                   </div>
                 </div>
               ) : (
@@ -433,7 +474,7 @@ export default function ArticleDetailPage() {
             </section>
           )}
 
-          {/* 🕒 Story Timeline */}
+          {/* ── Story Timeline (krushna's feature) ── */}
           {(timelineLoading || storyTimeline) && (
             <section className="mb-6">
               <div className="flex items-center gap-2 mb-4">
@@ -471,7 +512,11 @@ export default function ArticleDetailPage() {
                         const a = entry.articleId;
                         const isLast = i === arr.length - 1;
                         const isCurrent = a._id?.toString() === article?.id?.toString() || a.id === article?.id;
-                        const eventColors = { Origin: "bg-maroon", Breaking: "bg-red-600", Update: "bg-gold", Outcome: "bg-green-500", Reaction: "bg-blue-400", Announced: "bg-purple-500" };
+                        const eventColors = {
+                          Origin: "bg-maroon", Breaking: "bg-red-600",
+                          Update: "bg-gold", Outcome: "bg-green-500",
+                          Reaction: "bg-blue-400", Announced: "bg-purple-500",
+                        };
                         const dotColor = eventColors[entry.eventLabel] || "bg-text-muted";
                         return (
                           <div key={a._id || i} className="flex gap-3 group">
@@ -524,6 +569,7 @@ export default function ArticleDetailPage() {
 
         {/* ── Sidebar ── */}
         <div className="space-y-4 panel-slide-up">
+
           {/* 1. AI Summary */}
           <div className="bg-smoke rounded-[14px] border border-gold/30 p-[18px]">
             <div className="flex items-center justify-between mb-2.5">
@@ -564,7 +610,7 @@ export default function ArticleDetailPage() {
             )}
           </div>
 
-          {/* 3. Ask AI Chatbot */}
+          {/* 3. Ask AI Chatbot (krushna's wiring) */}
           <div className="bg-white rounded-[14px] border border-gold-subtle p-[18px]">
             <div className="flex items-center gap-2 text-[10px] font-bold tracking-[1.5px] uppercase text-gold-muted mb-2.5">
               <BotIcon size={14} className="text-maroon" /> AI Chatbot
@@ -645,6 +691,7 @@ export default function ArticleDetailPage() {
             </div>
             <p className="text-[12.5px] text-text-secondary leading-[1.65]">{DEFAULT_SOURCE_INFO}</p>
           </div>
+
         </div>
       </div>
     </AppShell>

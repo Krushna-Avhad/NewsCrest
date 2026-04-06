@@ -13,6 +13,7 @@ import {
   SettingsIcon,
   LaughIcon,
   TimelineIcon,
+  PerspectivesIcon,
 } from "../ui/Icons";
 
 const NAV_ITEMS = [
@@ -30,6 +31,7 @@ const NAV_ITEMS = [
   { section: "Discovery" },
   { id: "hatke", label: "Hatke", Icon: LaughIcon },
   { id: "timeline", label: "Story Timeline", Icon: TimelineIcon },
+  { id: "perspectives", label: "Perspectives", Icon: PerspectivesIcon },
   { section: "" },
   { id: "profile", label: "Profile & Settings", Icon: SettingsIcon },
 ];
