@@ -1,44 +1,65 @@
 import dotenv from "dotenv";
 import News from "../models/News.js";
 import Groq from "groq-sdk";
-import { groqCall, groqCallPriority, trackTokens } from "../utils/groqRateLimiter.js";
 
 dotenv.config();
 
-// Initialize Groq
+// ── Groq (your key — stored as GEMINI_API_KEY) ───────────────────────────────
 const groq = new Groq({ apiKey: process.env.GEMINI_API_KEY });
 
-// ── Groq helper ──────────────────────────────────────────────────────────────
-async function callGroq(prompt, maxTokens = 300, priority = false, label = "") {
-  const fn = async () => {
-    const response = await groq.chat.completions.create({
-      model: "llama-3.1-8b-instant",
-      messages: [{ role: "user", content: prompt }],
-      max_tokens: maxTokens,
-    });
-    // Track token usage to stay under 12,000/min budget
-    const tokens = response.usage?.total_tokens || maxTokens;
-    trackTokens(tokens);
-    return response.choices[0]?.message?.content?.trim() || "";
-  };
-  return priority ? groqCallPriority(fn, label) : groqCall(fn, label);
+async function callGroq(prompt, maxTokens = 300) {
+  const response = await groq.chat.completions.create({
+    model: "llama-3.1-8b-instant",
+    messages: [{ role: "user", content: prompt }],
+    max_tokens: maxTokens,
+  });
+  return response.choices[0]?.message?.content?.trim() || "";
 }
 
-// ── JSON parser ──────────────────────────────────────────────────────────────
-const parseAIJSON = (text) => {
+// ── Grok (teammate's key — for compare module) ───────────────────────────────
+const GROK_URL = "https://api.x.ai/v1/chat/completions";
+const GROK_MODEL = "grok-3-mini";
+
+async function callGrok(systemPrompt, userPrompt) {
+  const res = await fetch(GROK_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${process.env.GROK_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: GROK_MODEL,
+      temperature: 0.3,
+      messages: [
+        ...(systemPrompt ? [{ role: "system", content: systemPrompt }] : []),
+        { role: "user", content: userPrompt },
+      ],
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Grok ${res.status}: ${err}`);
+  }
+  const data = await res.json();
+  return data.choices?.[0]?.message?.content || "";
+}
+
+// ── JSON parsers ──────────────────────────────────────────────────────────────
+function parseAIJSON(text) {
   try {
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error("No JSON object found in AI response");
-    return JSON.parse(jsonMatch[0].trim());
+    const clean = text.replace(/```json\s*/gi, "").replace(/```/g, "").trim();
+    const match = clean.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error("No JSON object found");
+    return JSON.parse(match[0]);
   } catch (err) {
-    console.error("AI JSON Parsing Error. Raw Text:", text);
+    console.error("AI JSON Parsing Error:", err.message);
     return {
       reply: "I understood your request, but I'm having trouble formatting the news right now.",
       searchKeywords: [],
       categorySuggestion: "General"
     };
   }
-};
+}
 
 // ── Mock fallbacks ────────────────────────────────────────────────────────────
 function mockSummary(text) {
@@ -61,30 +82,59 @@ function mockHatke(title, content) {
   return "Breaking: Something happened somewhere. Experts have opinions. Twitter is already fighting about it 🔥";
 }
 
-// ── AI Methods ───────────────────────────────────────────────────────────────
+function mockCompare(item1, item2) {
+  const t1 = (item1.title || "Article 1").slice(0, 50);
+  const t2 = (item2.title || "Article 2").slice(0, 50);
+  return {
+    similarities: [
+      { aspect: "Public Relevance", description: "Both articles address issues of significant public interest.", confidence: 0.75 },
+      { aspect: "News Category", description: "Both stories fall within the same broad news domain.", confidence: 0.7 },
+    ],
+    differences: [
+      { aspect: "Topic Focus", description: `"${t1}" covers a distinct angle compared to "${t2}".`, confidence: 0.8 },
+      { aspect: "Geographical Scope", description: "The two articles differ in the regions and communities they address.", confidence: 0.7 },
+    ],
+    insights: [
+      { type: "key_takeaway", content: "Reading both articles together offers a fuller understanding of the broader news landscape.", importance: "high" },
+      { type: "key_takeaway", content: "Each article highlights a different dimension of public affairs worth following.", importance: "medium" },
+    ],
+    overallScore: 0.55,
+    sentiment: {
+      item1: "neutral",
+      item2: "neutral",
+      comparison: "Both articles maintain a balanced and neutral tone in their reporting.",
+    },
+    socialImpact: {
+      item1: { level: "medium", areas: ["Public Awareness", "Policy"], summary: "Likely to inform public debate and policy discussion." },
+      item2: { level: "medium", areas: ["Community", "Society"], summary: "Expected to influence community awareness and civic discourse." },
+      overall: "Both stories carry medium social impact and contribute to informed public discourse.",
+    },
+  };
+}
 
+// ── AI Methods ────────────────────────────────────────────────────────────────
+
+// YOUR MODULE — uses Groq (GEMINI_API_KEY)
 export const summarizeNews = async (text, articleId = null) => {
   if (!text) return "No content available to summarize.";
 
-  // ✅ Cache check — if already summarized, return from DB for free
+  // Cache check — return from DB if already summarized
   if (articleId) {
     try {
       const existing = await News.findById(articleId).select("aiGenerated.summary");
-      if (existing?.aiGenerated?.summary) {
-        return existing.aiGenerated.summary; // Zero Groq calls
-      }
-    } catch (_) {} // non-critical, proceed to generate
+      if (existing?.aiGenerated?.summary) return existing.aiGenerated.summary;
+    } catch (_) {}
   }
 
   try {
     const prompt = `Summarize this news article in 2-3 concise bullet points:\n\n${text.substring(0, 2000)}`;
-    const summary = await callGroq(prompt, 300, false, "summarize");
+    const summary = await callGroq(prompt, 300);
 
-    // ✅ Persist to DB so future calls are free
+    // Persist to DB so future calls are free
     if (articleId) {
       News.findByIdAndUpdate(articleId, {
         $set: { "aiGenerated.summary": summary }
-      }).catch(() => {}); // non-blocking, don't await
+      }).catch(() => {});
     }
 
     return summary;
@@ -94,6 +144,7 @@ export const summarizeNews = async (text, articleId = null) => {
   }
 };
 
+// YOUR MODULE — uses Groq (GEMINI_API_KEY)
 export const generateHatkeSummary = async (title, content) => {
   try {
     const prompt = `You are a witty Indian news reporter with Gen-Z energy.
@@ -105,52 +156,81 @@ Title: ${title}
 Summary: ${(content || "").substring(0, 300)}
 
 Only return the 2-line summary, nothing else.`;
-    return await callGroq(prompt, 150, true, "hatke"); // priority = true
+    return await callGroq(prompt, 150);
   } catch (err) {
     console.warn("generateHatkeSummary Groq failed, using mock:", err.message);
     return mockHatke(title, content);
   }
 };
 
+// YOUR MODULE — uses Groq (GEMINI_API_KEY)
 export const explainSimply = async (title, content) => {
   try {
     const prompt = `Explain this news story as if I am a 10-year-old. Use very simple terms and be brief (2-3 lines):
 Title: ${title}
 Content: ${(content || "").substring(0, 1000)}`;
-    return await callGroq(prompt, 300, true, "explain"); // priority = true — user triggered
+    return await callGroq(prompt, 300);
   } catch (err) {
     console.warn("explainSimply Groq failed, using mock:", err.message);
     return `${title} — This is an important story that affects many people.`;
   }
 };
 
+// TEAMMATE'S MODULE — uses Grok (GROK_API_KEY) for richer compare output
 export const compareNews = async (item1, item2) => {
-  try {
-    const prompt = `Compare these two news articles and output ONLY a raw JSON object with this structure:
+  const prompt = `Compare these two news articles. Return ONLY a valid JSON object — no markdown, no explanation, no code fences.
+
+Required JSON structure:
 {
-  "similarities": [{"aspect": "string", "description": "string"}],
-  "differences": [{"aspect": "string", "description": "string"}],
-  "insights": [{"type": "key_takeaway", "content": "string", "importance": "high"}],
+  "similarities": [{ "aspect": "string", "description": "string", "confidence": 0.8 }],
+  "differences": [{ "aspect": "string", "description": "string", "confidence": 0.8 }],
+  "insights": [{ "type": "key_takeaway", "content": "string", "importance": "high" }],
   "overallScore": 0.65,
-  "sentiment": {"item1": "neutral", "item2": "neutral", "comparison": "similar_sentiment"}
+  "sentiment": {
+    "item1": "positive|negative|neutral|mixed",
+    "item2": "positive|negative|neutral|mixed",
+    "comparison": "one sentence comparing the tone of both articles"
+  },
+  "socialImpact": {
+    "item1": { "level": "high|medium|low", "areas": ["area1"], "summary": "one sentence" },
+    "item2": { "level": "high|medium|low", "areas": ["area1"], "summary": "one sentence" },
+    "overall": "one sentence comparing overall social impact"
+  }
 }
 
-Article 1: ${item1.title} - ${(item1.content || "").substring(0, 500)}
-Article 2: ${item2.title} - ${(item2.content || "").substring(0, 500)}`;
-    const text = await callGroq(prompt, 500);
-    return parseAIJSON(text);
+Article 1:
+Title: ${item1.title}
+Content: ${(item1.content || item1.summary || "").slice(0, 600)}
+
+Article 2:
+Title: ${item2.title}
+Content: ${(item2.content || item2.summary || "").slice(0, 600)}`;
+
+  try {
+    const text = await callGrok(
+      "You are a precise JSON-only news comparison AI. Never include markdown or explanation.",
+      prompt
+    );
+    const parsed = parseAIJSON(text);
+    if (!parsed || (!Array.isArray(parsed.similarities) && !Array.isArray(parsed.differences))) {
+      throw new Error("Grok returned invalid JSON structure");
+    }
+    // Ensure importance values are valid
+    if (Array.isArray(parsed.insights)) {
+      const VALID = ["low", "medium", "high"];
+      parsed.insights = parsed.insights.map(i => ({
+        ...i,
+        importance: VALID.includes(i?.importance) ? i.importance : "medium",
+      }));
+    }
+    return parsed;
   } catch (err) {
-    console.warn("compareNews Groq failed, using mock:", err.message);
-    return {
-      similarities: [{ aspect: "relevance", description: "Both cover significant current events with broad public impact" }],
-      differences: [{ aspect: "focus", description: `"${item1.title?.slice(0, 40)}..." takes a different angle than "${item2.title?.slice(0, 40)}..."` }],
-      insights: [{ type: "key_takeaway", content: "Both stories reflect important ongoing developments worth following closely", importance: "high" }],
-      overallScore: 0.55,
-      sentiment: { item1: "neutral", item2: "neutral", comparison: "similar_sentiment" }
-    };
+    console.warn("compareNews Grok failed, using mock:", err.message);
+    return mockCompare(item1, item2);
   }
 };
 
+// YOUR MODULE — uses Groq (GEMINI_API_KEY)
 export const processChatbotQuery = async (query, user) => {
   try {
     const prompt = `
@@ -166,8 +246,7 @@ CRITICAL: Extract search keywords and respond ONLY with this JSON format (no mar
   "searchKeywords": ["keyword1", "keyword2"],
   "categorySuggestion": "Technology"
 }`;
-
-    const text = await callGroq(prompt, 200, true, "chatbot"); // priority = true — user is waiting
+    const text = await callGroq(prompt, 200);
     const aiResponse = parseAIJSON(text);
     const searchString = aiResponse.searchKeywords?.join("|") || query;
     const articles = await searchNews(searchString, user);
@@ -190,30 +269,20 @@ export const searchNews = async (keywords, user) => {
     if (!keywords || keywords.trim() === "") {
       return await News.find().sort({ publishedAt: -1 }).limit(limit);
     }
-
     const safeKeywords = keywords.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
     let query = {
       $or: [
         { title:   { $regex: safeKeywords, $options: "i" } },
         { content: { $regex: safeKeywords, $options: "i" } }
       ]
     };
-
     if (user?.interests?.length > 0) {
       query = {
-        $and: [
-          { $or: query.$or },
-          { category: { $in: user.interests } }
-        ]
+        $and: [{ $or: query.$or }, { category: { $in: user.interests } }]
       };
     }
-
     const results = await News.find(query).sort({ publishedAt: -1 }).limit(limit);
-    if (results.length === 0) {
-      return await News.find().sort({ publishedAt: -1 }).limit(5);
-    }
-    return results;
+    return results.length ? results : await News.find().sort({ publishedAt: -1 }).limit(5);
   } catch (error) {
     console.error("Database Search Error:", error);
     return await News.find().sort({ publishedAt: -1 }).limit(3);
