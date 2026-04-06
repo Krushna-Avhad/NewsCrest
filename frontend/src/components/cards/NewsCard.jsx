@@ -106,7 +106,6 @@ function CardImage({ article }) {
           alt={article.title}
           className="w-full h-full object-cover"
           onError={(e) => {
-            // Fallback to placeholder on broken image
             e.target.parentElement.innerHTML = `<div class="w-full h-[180px] bg-gradient-to-br ${gradient} flex items-center justify-center"></div>`;
           }}
         />
@@ -123,6 +122,7 @@ function CardImage({ article }) {
   );
 }
 
+// NewsCard — no Compare button here; Compare lives only on the full ArticleDetailPage
 export function NewsCard({ article, onClick, showSave = true }) {
   const { toggleSaveArticle, isArticleSaved } = useApp();
   const saved = isArticleSaved(article?.id);
@@ -172,6 +172,7 @@ export function NewsCard({ article, onClick, showSave = true }) {
           )}
         </div>
       </div>
+
       {showSave && (
         <div className="px-4 py-2.5 border-t border-gold-subtle flex items-center gap-2">
           <button

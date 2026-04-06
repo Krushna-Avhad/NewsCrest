@@ -5,6 +5,7 @@ import AppShell from "../components/layout/AppShell";
 import { NewsCard } from "../components/cards/NewsCard";
 import { Button, NewsTag } from "../components/ui/Primitives";
 import { newsAPI, hatkeAPI } from "../services/api";
+import { useSpeechSynthesis } from "../hooks/useSpeechSynthesis";
 import {
   BookmarkIcon,
   ShareIcon,
@@ -27,6 +28,54 @@ const TEXT_SIZES = {
 const DEFAULT_SOURCE_INFO =
   "This is a verified and credible media source known for accurate, fact-checked reporting across its primary coverage areas.";
 
+// ── Mic button ────────────────────────────────────────────────────────────────
+function MicButton({ onPress, isSpeaking, disabled }) {
+  return (
+    <button
+      onClick={onPress}
+      disabled={disabled}
+      title={isSpeaking ? "Stop reading" : "Read article aloud"}
+      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] text-[12px] font-medium border transition-all duration-200
+        ${
+          isSpeaking
+            ? "bg-maroon text-white border-maroon shadow-[0_0_0_3px_rgba(116,21,21,0.18)] animate-pulse"
+            : "text-text-secondary border-gold/25 hover:bg-smoke hover:border-gold/50"
+        }
+        ${disabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer"}`}
+    >
+      {isSpeaking ? (
+        <>
+          <span className="w-3 h-3 flex items-center gap-[2px]">
+            <span className="w-[3px] h-[10px] bg-white rounded-full animate-[bounce_0.6s_ease-in-out_infinite]" />
+            <span className="w-[3px] h-[6px] bg-white rounded-full animate-[bounce_0.6s_ease-in-out_0.1s_infinite]" />
+            <span className="w-[3px] h-[10px] bg-white rounded-full animate-[bounce_0.6s_ease-in-out_0.2s_infinite]" />
+          </span>
+          Stop
+        </>
+      ) : (
+        <>
+          <svg
+            width="13"
+            height="13"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+            <line x1="12" y1="19" x2="12" y2="23" />
+            <line x1="8" y1="23" x2="16" y2="23" />
+          </svg>
+          Listen
+        </>
+      )}
+    </button>
+  );
+}
+
 export default function ArticleDetailPage() {
   const {
     activeArticle,
@@ -44,12 +93,33 @@ export default function ArticleDetailPage() {
   const saved = isArticleSaved(article?.id);
   const textSize = TEXT_SIZES[readingPrefs?.textSize] || TEXT_SIZES.Medium;
 
-  // Related articles from feed (same category)
+  // Speech
+  const { speak, stop, isSpeaking, isSupported } = useSpeechSynthesis();
+
+  const handleListen = () => {
+    if (isSpeaking) {
+      stop();
+      return;
+    }
+    // Speak: title + summary (or first paragraph of content)
+    const title = article?.title || "";
+    const summary =
+      aiSummary || article?.summary || article?.content?.slice(0, 500) || "";
+    const text = `${title}. ${summary}`;
+    speak(text);
+  };
+
+  // Stop speech when navigating away
+  useEffect(() => {
+    return () => stop();
+  }, [article?.id]);
+
+  // Related articles
   const related = [...(headlines || []), ...(feedArticles || [])]
     .filter((a) => a.id !== article?.id && a.category === article?.category)
     .slice(0, 3);
 
-  // AI summary state
+  // AI summary
   const [summaryGenerated, setSummaryGenerated] = useState(!!article?.summary);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [aiSummary, setAiSummary] = useState(article?.summary || "");
@@ -71,8 +141,7 @@ export default function ArticleDetailPage() {
   const summaryCalledRef = useRef(false);
 
   const generateSummary = async () => {
-    if (!article?.id) return;
-    if (summaryCalledRef.current) return;
+    if (!article?.id || summaryCalledRef.current) return;
     summaryCalledRef.current = true;
     setSummaryLoading(true);
     try {
@@ -89,8 +158,7 @@ export default function ArticleDetailPage() {
   const hatkeCalledRef = useRef(false);
 
   const generateHatke = async () => {
-    if (!article?.id) return;
-    if (hatkeCalledRef.current) return;
+    if (!article?.id || hatkeCalledRef.current) return;
     hatkeCalledRef.current = true;
     setHatkeLoading(true);
     try {
@@ -114,7 +182,7 @@ export default function ArticleDetailPage() {
         .catch(() => {});
     } else {
       navigator.clipboard.writeText(article?.url || text).then(() => {
-        setShareMsg("Link copied!");
+        setShareMsg("Copied!");
         setTimeout(() => setShareMsg(""), 2000);
       });
     }
@@ -158,9 +226,9 @@ export default function ArticleDetailPage() {
   return (
     <AppShell title="Article">
       <div className="grid grid-cols-[1fr_360px] gap-7">
-        {/* Main content */}
+        {/* ── Main content ── */}
         <div className="slide-in-left">
-          {/* Category + meta */}
+          {/* Category + tags */}
           <div className="flex items-center gap-3 mb-5">
             <NewsTag>{article.category}</NewsTag>
             {article.tags?.slice(0, 3).map((tag) => (
@@ -265,8 +333,8 @@ export default function ArticleDetailPage() {
             </a>
           )}
 
-          {/* Action bar */}
-          <div className="flex items-center gap-2 mb-8 pb-6 border-b border-gold/20">
+          {/* ── Action bar (with mic button) ── */}
+          <div className="flex items-center gap-2 mb-8 pb-6 border-b border-gold/20 flex-wrap">
             <Button
               variant={saved ? "primary" : "secondary"}
               size="sm"
@@ -284,6 +352,15 @@ export default function ArticleDetailPage() {
             >
               <ScaleIcon size={15} /> Compare
             </Button>
+
+            {/* Mic / Listen button */}
+            {isSupported && (
+              <MicButton
+                onPress={handleListen}
+                isSpeaking={isSpeaking}
+                disabled={false}
+              />
+            )}
           </div>
 
           {/* Related articles */}
@@ -303,7 +380,7 @@ export default function ArticleDetailPage() {
           )}
         </div>
 
-        {/* Sidebar */}
+        {/* ── Sidebar ── */}
         <div className="space-y-4 panel-slide-up">
           {/* 1. AI Summary */}
           <div className="bg-smoke rounded-[14px] border border-gold/30 p-[18px]">
@@ -414,7 +491,11 @@ export default function ArticleDetailPage() {
               </div>
               <button
                 onClick={handleSaveNote}
-                className={`w-full flex items-center justify-center gap-2 py-2 rounded-[10px] text-[13px] font-semibold transition-all duration-200 cursor-pointer ${noteSaved ? "bg-green-500/10 text-green-700 border border-green-500/20" : "bg-maroon text-white hover:bg-maroon-dark"}`}
+                className={`w-full flex items-center justify-center gap-2 py-2 rounded-[10px] text-[13px] font-semibold transition-all duration-200 cursor-pointer ${
+                  noteSaved
+                    ? "bg-green-500/10 text-green-700 border border-green-500/20"
+                    : "bg-maroon text-white hover:bg-maroon-dark"
+                }`}
               >
                 {noteSaved ? (
                   <>
