@@ -3,6 +3,7 @@ import { AppProvider, useApp } from "./context/AppContext";
 import LandingPage from "./pages/LandingPage";
 import LoginPage from "./pages/LoginPage";
 import SignupPage from "./pages/SignupPage";
+import OtpPage from "./pages/OtpPage";
 import DashboardPage from "./pages/DashboardPage";
 import ExplorePage from "./pages/ExplorePage";
 import CategoriesPage from "./pages/CategoriesPage";
@@ -40,6 +41,7 @@ const PAGE_MAP = {
   landing: LandingPage,
   login: LoginPage,
   signup: SignupPage,
+  otp: OtpPage,
   dashboard: DashboardPage,
   explore: ExplorePage,
   categories: CategoriesPage,

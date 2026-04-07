@@ -87,6 +87,21 @@ export const authAPI = {
     return data; // { token, user, message }
   },
 
+  verifyOtp: async (email, otp) => {
+    const data = await request("/auth/verify-otp", {
+      method: "POST",
+      body: JSON.stringify({ email, otp }),
+    });
+    if (data.token) setToken(data.token);
+    return data; // { token, user, message }
+  },
+
+  resendOtp: (email) =>
+    request("/auth/resend-otp", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }),
+
   getProfile: () => request("/auth/profile"), // returns user object directly
   updateProfile: (payload) =>
     request("/auth/profile", { method: "PUT", body: JSON.stringify(payload) }),
@@ -323,6 +338,7 @@ export const compareAPI = {
       method: "POST",
     });
     // Same — return results directly, not the DB record
+    // returns { comparison, message }
     return data.comparison?.results || data.comparison || data;
   },
 
@@ -421,6 +437,7 @@ export const timelineAPI = {
 // ─── PERSPECTIVE ──────────────────────────────────────────────────────────────
 // POST /api/perspective  → { perspectives: [{id, label, text}] }
 // Note: emoji field has been removed; use persona icons in the UI instead.
+// POST /api/perspective  → { perspectives: [{id, label, emoji, text}] }
 export const perspectiveAPI = {
   generate: async ({ title, description, category }) => {
     const data = await request("/perspective", {

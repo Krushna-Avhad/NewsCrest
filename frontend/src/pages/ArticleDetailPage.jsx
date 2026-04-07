@@ -186,7 +186,11 @@ export default function ArticleDetailPage() {
   };
 
   const handleViewPerspectives = async () => {
-    if (perspectives.length > 0) { setPerspectivesVisible(v => !v); return; }
+    // If already loaded, just toggle visibility
+    if (perspectives.length > 0) {
+      setPerspectivesVisible(v => !v);
+      return;
+    }
     setPerspectivesVisible(true);
     setPerspectivesLoading(true);
     try {
@@ -210,10 +214,16 @@ export default function ArticleDetailPage() {
   const handleShare = () => {
     const text = `${article?.title} — Read on NewsCrest`;
     if (navigator.share) {
-      navigator.share({ title: article?.title, text, url: article?.url || window.location.href }).catch(() => {});
+      navigator
+        .share({
+          title: article?.title,
+          text,
+          url: article?.url || window.location.href,
+        })
+        .catch(() => {});
     } else {
       navigator.clipboard.writeText(article?.url || text).then(() => {
-        setShareMsg("Copied!");
+        setShareMsg("Link copied!");
         setTimeout(() => setShareMsg(""), 2000);
       });
     }
@@ -363,7 +373,7 @@ export default function ArticleDetailPage() {
             )}
           </div>
 
-          {/* ── Perspectives Panel (both branches) ── */}
+          {/* ── Perspectives Panel ── */}
           {perspectivesVisible && (
             <section className="mb-8">
               <div className="flex items-center justify-between mb-4">
@@ -467,8 +477,12 @@ export default function ArticleDetailPage() {
                 </div>
               ) : (
                 <div className="bg-white rounded-card border border-gold-subtle p-5 text-center">
-                  <p className="text-[13px] font-semibold text-text-primary mb-1">No relevant perspectives available</p>
-                  <p className="text-[12px] text-text-muted">This article does not have a direct impact on specific groups.</p>
+                  <p className="text-[13px] font-semibold text-text-primary mb-1">
+                    No relevant perspectives available
+                  </p>
+                  <p className="text-[12px] text-text-muted">
+                    This article does not have a direct impact on specific groups.
+                  </p>
                 </div>
               )}
             </section>
@@ -504,6 +518,8 @@ export default function ArticleDetailPage() {
                       {storyTimeline.articles?.filter(a => a.articleId?.title).length} events
                     </span>
                   </div>
+
+                  {/* Timeline events */}
                   <div className="p-4">
                     {storyTimeline.articles
                       ?.filter(a => a.articleId?.title)
@@ -587,7 +603,9 @@ export default function ArticleDetailPage() {
                 {aiSummary || article.summary || "Summary not available."}
               </p>
             ) : (
-              <p className="text-[13px] text-text-muted italic">Click "Generate" to create an AI summary.</p>
+              <p className="text-[13px] text-text-muted italic">
+                Click "Generate" to create an AI summary.
+              </p>
             )}
           </div>
 

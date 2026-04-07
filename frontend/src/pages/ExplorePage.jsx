@@ -101,19 +101,28 @@ export default function ExplorePage() {
   );
 
   // React to tab changes
-  useEffect(() => {
-    doSearch(query, activeTab);
-  }, [activeTab]); // query intentionally excluded — only fires on tab change
+useEffect(() => {
+  if (!query.trim() && activeTab === "All") {
+    setResults([]);
+    setSearched(false);
+    setLoading(false);
+    return;
+  }
 
-  const handleSearch = () => {
-    if (!query.trim()) {
-      // Empty search = clear results and go back to browsing
-      setResults([]);
-      setSearched(false);
-      return;
-    }
-    doSearch(query, activeTab);
-  };
+  doSearch(query, activeTab);
+}, [activeTab]); // runs only when tab changes
+
+const handleSearch = () => {
+  if (!query.trim()) {
+    // Empty search = clear results and go back to browsing
+    setResults([]);
+    setSearched(false);
+    setLoading(false);
+    return;
+  }
+
+  doSearch(query, activeTab);
+};
 
   const handleTrendingClick = (topic) => {
     setQuery(
@@ -128,10 +137,20 @@ export default function ExplorePage() {
 
   // When searched/tab active → use API results
   // When on "All" with no query → use baseArticles directly
-  const displayArticles = searched ? results : baseArticles;
+
 
   // Client-side filter only for live typing before user hits Search
   // Once searched=true we trust the API results completely
+
+  const displayArticles =
+    searched || query.trim()
+      ? results
+      : baseArticles.filter((a) => {
+          if (activeTab === "All") return true;
+          if (activeTab === "Trending") return a.trending;
+          return a.category?.toLowerCase().includes(activeTab.toLowerCase());
+        });
+
   const filteredByQuery = !searched && query.trim()
     ? displayArticles.filter(
         (a) =>

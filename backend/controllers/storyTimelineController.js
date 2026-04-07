@@ -14,6 +14,7 @@ import User from "../models/User.js";
 import News from "../models/News.js";
 import StoryTimeline from "../models/StoryTimeline.js";
 import UserActivity from "../models/UserActivity.js";
+// getAllArticlesForDropdown is defined in this file and uses News directly
 
 // ── GET /api/timeline/my-stories ─────────────────────────────────────────────
 export const getMyStories = async (req, res) => {
@@ -163,6 +164,8 @@ export const getTrendingStories = async (req, res) => {
 };
 
 // ── POST /api/timeline/generate ──────────────────────────────────────────────
+// Manual input: user pastes a headline → system generates a timeline
+// Body: { input: "headline text" }
 export const generateFromInput = async (req, res) => {
   try {
     const { input } = req.body;
@@ -184,6 +187,8 @@ export const generateFromInput = async (req, res) => {
 };
 
 // ── GET /api/timeline/all-articles ───────────────────────────────────────────
+// Returns ALL articles from the News DB for the "Select Article" dropdown.
+// Sorted newest first, limited to 100 for performance.
 export const getAllArticlesForDropdown = async (req, res) => {
   try {
     const articles = await News.find({})

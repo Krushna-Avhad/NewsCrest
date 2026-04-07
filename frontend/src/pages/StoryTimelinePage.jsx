@@ -280,6 +280,9 @@ function StoryListItem({ story, onClick, onDelete }) {
             {newCount > 0 && (
               <span className="text-[9px] font-bold bg-maroon text-white px-1.5 py-0.5 rounded-full">{newCount} new</span>
             )}
+            {story.isLocalFallback && (
+              <span className="text-[9px] bg-lemon text-gold-muted border border-gold/30 px-1.5 py-0.5 rounded-full">Offline</span>
+            )}
           </div>
           <h3 className="font-playfair text-[14.5px] font-bold text-text-primary leading-[1.3] mb-1.5 group-hover:text-maroon transition-colors duration-200 line-clamp-2">
             {story.title}
@@ -752,42 +755,83 @@ export default function StoryTimelinePage() {
         </div>
       )}
 
-      {/* Story list — reading history stories + saved article timelines */}
-      {loading && user ? (
-        <SkeletonList />
-      ) : (() => {
-        const myIds = new Set(myStories.map(s => s._id?.toString()));
-        const uniqueSaved = savedStories.filter(s => !myIds.has(s._id?.toString()));
+      {/* Section header — no tabs, just "Continue This Story" */}
+<div className="flex items-center justify-between mb-4">
+  <div>
+    <h3 className="font-playfair text-[19px] font-bold text-text-primary">
+      Continue This Story
+    </h3>
+    <p className="text-[12.5px] text-text-muted mt-0.5">
+      {user
+        ? "Threads based on your reading activity"
+        : "Sign in to see your personalised story threads"}
+    </p>
+  </div>
 
-        if (!user) return null;
-        if (myStories.length === 0 && uniqueSaved.length === 0) return null;
+  {(() => {
+    const myIds = new Set(myStories.map(s => s._id?.toString()));
+    const uniqueSaved = savedStories.filter(
+      s => !myIds.has(s._id?.toString())
+    );
+    const total = myStories.length + uniqueSaved.length;
 
-        return (
-          <div className="space-y-3">
-            {myStories.length > 0 && (
-              <>
-                <p className="text-[11px] font-bold uppercase tracking-[1.5px] text-text-muted px-1 pt-1">
-                  From your reading history
-                </p>
-                {myStories.map((story, i) => (
-                  <StoryListItem key={story._id || i} story={story} onClick={handleOpenStory} onDelete={handleDeleteStory} />
-                ))}
-              </>
-            )}
-            {uniqueSaved.length > 0 && (
-              <>
-                <p className="text-[11px] font-bold uppercase tracking-[1.5px] text-text-muted px-1 pt-2">
-                  From your saved articles
-                </p>
-                {uniqueSaved.map((story, i) => (
-                  <StoryListItem key={story._id || i} story={story} onClick={handleOpenStory} onDelete={handleDeleteStory} />
-                ))}
-              </>
-            )}
-          </div>
-        );
-      })()}
+    return total > 0 ? (
+      <span className="text-[11px] text-text-muted">
+        {total} active threads
+      </span>
+    ) : null;
+  })()}
+</div>
 
+{/* Story list */}
+{loading && user ? (
+  <SkeletonList />
+) : (() => {
+    const myIds = new Set(myStories.map(s => s._id?.toString()));
+    const uniqueSaved = savedStories.filter(
+      s => !myIds.has(s._id?.toString())
+    );
+
+    if (myStories.length === 0 && uniqueSaved.length === 0) return null;
+
+    return (
+      <div className="space-y-3">
+        {/* My Stories */}
+        {myStories.length > 0 && (
+          <>
+            <p className="text-[11px] font-bold uppercase tracking-[1.5px] text-text-muted px-1 pt-1">
+              From your reading history
+            </p>
+            {myStories.map((story, i) => (
+              <StoryListItem
+                key={story._id || i}
+                story={story}
+                onClick={handleOpenStory}
+                onDelete={handleDeleteStory}
+              />
+            ))}
+          </>
+        )}
+
+        {/* Saved Stories */}
+        {uniqueSaved.length > 0 && (
+          <>
+            <p className="text-[11px] font-bold uppercase tracking-[1.5px] text-text-muted px-1 pt-2">
+              From your saved articles
+            </p>
+            {uniqueSaved.map((story, i) => (
+              <StoryListItem
+                key={story._id || i}
+                story={story}
+                onClick={handleOpenStory}
+                onDelete={handleDeleteStory}
+              />
+            ))}
+          </>
+        )}
+      </div>
+    );
+  })()}
     </AppShell>
   );
 }

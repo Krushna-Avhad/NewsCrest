@@ -18,15 +18,20 @@ import storyTimelineRoutes  from "./routes/storyTimelineRoutes.js";
 import perspectiveRoutes    from "./routes/perspectiveRoutes.js";
 
 import News from "./models/News.js";
-import "./models/UserActivity.js"; // register model for timeline persistence
+import "./models/UserActivity.js";
 import { fetchNews, saveNewsToDatabase } from "./services/newsService.js";
-import { processArticleIntoTimeline } from "./services/storyTimelineService.js";
+import { processArticleIntoTimeline }    from "./services/storyTimelineService.js";
+import {
+  processBreakingNewsAlerts,
+  processPersonalizedAlerts,
+  processDailyDigest,
+} from "./services/notificationService.js";
+import { verifyEmailConnection } from "./services/emailService.js";
 
 const app = express();
 
-// In backend/server.js
 app.use((req, res, next) => {
-  console.log(`📡 [${new Date().toISOString()}] ${req.method} request to ${req.url}`);
+  console.log(`📡 [${new Date().toISOString()}] ${req.method} ${req.url}`);
   next();
 });
 
@@ -53,10 +58,15 @@ app.get("/api/health", (req, res) => {
     message: "NewsCrest API is running",
     timestamp: new Date().toISOString(),
     env: {
-      hasNewsApiKey: !!process.env.NEWS_API_KEY,
-      hasGrokKey:    !!process.env.GROK_API_KEY,
-      hasMongoUri:   !!process.env.MONGO_URI,
-      hasJwtSecret:  !!process.env.JWT_SECRET,
+      hasNewsApiKey:  !!process.env.NEWS_API_KEY,
+      hasGeminiKey:   !!process.env.GEMINI_API_KEY,
+      hasMongoUri:    !!process.env.MONGO_URI,
+      hasJwtSecret:   !!process.env.JWT_SECRET,
+      emailConfigured:
+        !!(process.env.EMAIL_USER &&
+           process.env.EMAIL_USER !== "your_email@gmail.com" &&
+           process.env.EMAIL_PASS &&
+           process.env.EMAIL_PASS !== "your_16char_app_password"),
     },
   });
 });
@@ -198,21 +208,45 @@ async function refreshAllNews() {
 
 
 // --- 2. Database Connection & Server Startup ---
+// ── DB connect + start ────────────────────────────────────────────────────────
 mongoose
   .connect(process.env.MONGO_URI)
   .then(async () => {
     console.log("✅ MongoDB connected");
-    
-    // Initial seed: ensure the DB has content immediately on startup
-    await seedNews(); 
 
-    // ✅ THE PRO-TIP: Automated Hourly Refresh
-    // This runs exactly at the start of every hour (e.g., 4:00, 5:00)
+    // ── Verify email config now that all env vars are loaded ─────────────────
+    verifyEmailConnection();
+
+    await seedNews();
+
+    // ── Cron: Hourly news refresh ─────────────────────────────────────────────
     cron.schedule("0 * * * *", () => {
       refreshAllNews();
     });
 
     // ✅ Story Timeline: process latest articles into story threads every 2 hours
+    // ── Cron: Breaking news alerts — every hour, 5 min past ──────────────────
+    cron.schedule("5 * * * *", async () => {
+      console.log("🔔 Processing breaking news alerts...");
+      try { await processBreakingNewsAlerts(); }
+      catch (err) { console.warn("Breaking alerts error:", err.message); }
+    });
+
+    // ── Cron: Personalized alerts — every 6 hours ────────────────────────────
+    cron.schedule("0 */6 * * *", async () => {
+      console.log("🎯 Processing personalized alerts...");
+      try { await processPersonalizedAlerts(); }
+      catch (err) { console.warn("Personalized alerts error:", err.message); }
+    });
+
+    // ── Cron: Daily digest — every day at 8:00 AM ────────────────────────────
+    cron.schedule("0 8 * * *", async () => {
+      console.log("📅 Processing daily digest...");
+      try { await processDailyDigest(); }
+      catch (err) { console.warn("Daily digest error:", err.message); }
+    });
+
+    // ── Cron: Story timeline — every 2 hours ─────────────────────────────────
     cron.schedule("30 */2 * * *", async () => {
       console.log("🗞️  Story Timeline: processing latest articles...");
       try {
@@ -228,6 +262,7 @@ mongoose
     });
 
     // Start the Express server
+    console.log("🔍 Debug - process.env.PORT:", process.env.PORT);
     const PORT = process.env.PORT || 5000;
     app.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
