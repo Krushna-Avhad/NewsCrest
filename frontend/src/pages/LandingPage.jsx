@@ -164,31 +164,7 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── Why Choose Us ── */}
-      <section id="why" className="bg-wheat py-[80px] px-[60px]">
-        <div className="max-w-[1280px] mx-auto">
-          <div className="text-center mb-12">
-            <div className="inline-flex items-center gap-2 bg-maroon/8 border border-maroon/20 text-maroon px-3.5 py-1.5 rounded-full text-[11px] font-bold tracking-[1px] uppercase mb-4">Why NewsCrest</div>
-            <h2 className="font-playfair text-[42px] font-bold text-text-primary leading-[1.2]">
-              The <em className="text-maroon not-italic">intelligent</em> way<br />to stay informed
-            </h2>
-          </div>
-          <div className="grid grid-cols-2 gap-5">
-            {WHYS.map(({ Icon, title, desc }) => (
-              <div key={title} className="card-reveal flex gap-4 bg-white/70 rounded-card p-5 border border-gold-subtle hover:shadow-card transition-all duration-200">
-                <div className="w-10 h-10 rounded-[10px] bg-maroon/8 flex items-center justify-center text-maroon flex-shrink-0 mt-0.5">
-                  <Icon size={18} />
-                </div>
-                <div>
-                  <h3 className="font-playfair text-[17px] font-bold text-text-primary mb-1.5">{title}</h3>
-                  <p className="text-[13.5px] text-text-secondary leading-[1.6]">{desc}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
+      
       {/* ── Profiles ── */}
       <section id="profiles" className="py-[80px] px-[60px] max-w-[1280px] mx-auto">
         <div className="text-center mb-12">
@@ -212,6 +188,31 @@ export default function LandingPage() {
               </div>
             </div>
           ))}
+        </div>
+      </section>
+
+{/* ── Why Choose Us ── */}
+      <section id="why" className="bg-wheat py-[80px] px-[60px]">
+        <div className="max-w-[1280px] mx-auto">
+          <div className="text-center mb-12">
+            <div className="inline-flex items-center gap-2 bg-maroon/8 border border-maroon/20 text-maroon px-3.5 py-1.5 rounded-full text-[11px] font-bold tracking-[1px] uppercase mb-4">Why NewsCrest</div>
+            <h2 className="font-playfair text-[42px] font-bold text-text-primary leading-[1.2]">
+              The <em className="text-maroon not-italic">intelligent</em> way<br />to stay informed
+            </h2>
+          </div>
+          <div className="grid grid-cols-2 gap-5">
+            {WHYS.map(({ Icon, title, desc }) => (
+              <div key={title} className="card-reveal flex gap-4 bg-white/70 rounded-card p-5 border border-gold-subtle hover:shadow-card transition-all duration-200">
+                <div className="w-10 h-10 rounded-[10px] bg-maroon/8 flex items-center justify-center text-maroon flex-shrink-0 mt-0.5">
+                  <Icon size={18} />
+                </div>
+                <div>
+                  <h3 className="font-playfair text-[17px] font-bold text-text-primary mb-1.5">{title}</h3>
+                  <p className="text-[13.5px] text-text-secondary leading-[1.6]">{desc}</p>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 

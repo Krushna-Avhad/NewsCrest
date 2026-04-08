@@ -3,6 +3,8 @@ import { useState } from "react";
 import { useApp } from "../context/AppContext";
 import { LogoOnDark } from "../components/ui/Logo";
 import { Button, InputField } from "../components/ui/Primitives";
+import { EyeIcon, EyeOffIcon } from "../components/ui/Icons";
+import {useEffect } from "react";
 import {
   CheckIcon,
   UserIcon,
@@ -63,6 +65,8 @@ export default function SignupPage() {
   const [step, setStep] = useState(1);
 
   // Form state
+  const [showPassword, setShowPassword] = useState(false);
+const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -89,15 +93,28 @@ export default function SignupPage() {
     );
 
   const handleStep1Next = () => {
-    if (!name.trim()) return setStep1Error("Please enter your full name.");
-    if (!email.trim()) return setStep1Error("Please enter your email.");
-    if (!password || password.length < 6)
-      return setStep1Error("Password must be at least 6 characters.");
-    if (password !== confirmPassword)
-      return setStep1Error("Passwords do not match.");
-    setStep1Error("");
-    setStep(2);
-  };
+  if (!name.trim()) return setStep1Error("Please enter your full name.");
+
+  if (!/^[a-zA-Z\s]+$/.test(name))
+    return setStep1Error("Name should contain only letters.");
+
+  if (!email.trim()) return setStep1Error("Please enter your email.");
+
+  if (
+    !passwordChecks.length ||
+    !passwordChecks.upper ||
+    !passwordChecks.number ||
+    !passwordChecks.special
+  ) {
+    return setStep1Error("Password does not meet security requirements.");
+  }
+
+  if (password !== confirmPassword)
+    return setStep1Error("Passwords do not match.");
+
+  setStep1Error("");
+  setStep(2);
+};
 
   const handleSignup = async () => {
     await signup({
@@ -113,7 +130,64 @@ export default function SignupPage() {
   };
 
   const content = STEP_CONTENT[step - 1];
+const passwordChecks = {
+  length: password.length >= 8,
+  upper: /[A-Z]/.test(password),
+  number: /[0-9]/.test(password),
+  special: /[^A-Za-z0-9]/.test(password),
+};
+useEffect(() => {
+  if (!name.trim()) {
+    setStep1Error("Please enter your full name.");
+  } else if (!/^[a-zA-Z\s]+$/.test(name)) {
+    setStep1Error("Name should contain only letters.");
+  } else if (!email.trim()) {
+    setStep1Error("Please enter your email.");
+  } else if (!password) {
+    setStep1Error("Please enter a password.");
+  } else if (!passwordChecks.length) {
+    setStep1Error("Password must be at least 8 characters.");
+  } else if (!passwordChecks.upper) {
+    setStep1Error("Password must include an uppercase letter.");
+  } else if (!passwordChecks.number) {
+    setStep1Error("Password must include a number.");
+  } else if (!passwordChecks.special) {
+    setStep1Error("Password must include a special character.");
+  } else if (password !== confirmPassword) {
+    setStep1Error("Passwords do not match.");
+  } else {
+    setStep1Error("");
+  }
+}, [name, email, password, confirmPassword]);
+const generatePassword = () => {
+  const upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const lower = "abcdefghijklmnopqrstuvwxyz";
+  const numbers = "0123456789";
+  const special = "!@#$%^&*";
 
+  // Ensure at least one of each
+  let password =
+    upper[Math.floor(Math.random() * upper.length)] +
+    lower[Math.floor(Math.random() * lower.length)] +
+    numbers[Math.floor(Math.random() * numbers.length)] +
+    special[Math.floor(Math.random() * special.length)];
+
+  const allChars = upper + lower + numbers + special;
+
+  // Fill remaining length
+  for (let i = password.length; i < 12; i++) {
+    password += allChars[Math.floor(Math.random() * allChars.length)];
+  }
+
+  // Shuffle password
+  password = password
+    .split("")
+    .sort(() => Math.random() - 0.5)
+    .join("");
+
+  setPassword(password);
+  setConfirmPassword(password);
+};
   return (
     <div className="min-h-screen grid grid-cols-2">
       {/* Left panel */}
@@ -225,7 +299,12 @@ export default function SignupPage() {
                   type="text"
                   placeholder="Arjun Sharma"
                   value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  onChange={(e) => {
+  const value = e.target.value;
+  if (/^[a-zA-Z\s]*$/.test(value)) {
+    setName(value);
+  }
+}}
                   className="w-full px-4 py-[11px] border-[1.5px] border-gold/25 rounded-[12px] font-inter text-[14px] text-text-primary bg-white outline-none transition-all duration-200 placeholder:text-text-muted focus:border-gold focus:shadow-[0_0_0_3px_rgba(218,165,32,0.12)]"
                 />
               </div>
@@ -245,26 +324,71 @@ export default function SignupPage() {
                 <label className="block text-[12px] font-semibold text-text-secondary mb-1.5">
                   Password
                 </label>
-                <input
-                  type="password"
-                  placeholder="Create a strong password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-4 py-[11px] border-[1.5px] border-gold/25 rounded-[12px] font-inter text-[14px] text-text-primary bg-white outline-none transition-all duration-200 placeholder:text-text-muted focus:border-gold focus:shadow-[0_0_0_3px_rgba(218,165,32,0.12)]"
-                />
+                <div className="relative">
+  <input
+    type={showPassword ? "text" : "password"}
+    placeholder="Create a strong password"
+    value={password}
+    onChange={(e) => setPassword(e.target.value)}
+    className="w-full px-4 py-[11px] border-[1.5px] border-gold/25 rounded-[12px] pr-11"
+  />
+  <button
+    type="button"
+    onClick={() => setShowPassword(!showPassword)}
+    className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted"
+  >
+    {showPassword ? <EyeOffIcon size={16} /> : <EyeIcon size={16} />}
+  </button>
+</div>
               </div>
+              <div className="mt-2 text-[12px] grid grid-cols-2 gap-x-6 gap-y-2">
+  <div className={`flex items-center gap-2 ${passwordChecks.length ? "text-green-600" : "text-red-500"}`}>
+    <span>•</span>
+    <span>At least 8 characters</span>
+  </div>
+
+  <div className={`flex items-center gap-2 ${passwordChecks.upper ? "text-green-600" : "text-red-500"}`}>
+    <span>•</span>
+    <span>One uppercase letter</span>
+  </div>
+
+  <div className={`flex items-center gap-2 ${passwordChecks.number ? "text-green-600" : "text-red-500"}`}>
+    <span>•</span>
+    <span>One number</span>
+  </div>
+
+  <div className={`flex items-center gap-2 ${passwordChecks.special ? "text-green-600" : "text-red-500"}`}>
+    <span>•</span>
+    <span>One special character</span>
+  </div>
+</div>
+                <button
+  type="button"
+  onClick={generatePassword}
+  className="text-[12px] text-maroon font-semibold mt-2 hover:underline"
+>
+  Suggest strong password
+</button>
               <div className="mb-6">
                 <label className="block text-[12px] font-semibold text-text-secondary mb-1.5">
                   Confirm Password
                 </label>
-                <input
-                  type="password"
-                  placeholder="Re-enter password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleStep1Next()}
-                  className="w-full px-4 py-[11px] border-[1.5px] border-gold/25 rounded-[12px] font-inter text-[14px] text-text-primary bg-white outline-none transition-all duration-200 placeholder:text-text-muted focus:border-gold focus:shadow-[0_0_0_3px_rgba(218,165,32,0.12)]"
-                />
+                <div className="relative">
+  <input
+    type={showConfirmPassword ? "text" : "password"}
+    placeholder="Re-enter password"
+    value={confirmPassword}
+    onChange={(e) => setConfirmPassword(e.target.value)}
+    className="w-full px-4 py-[11px] border-[1.5px] border-gold/25 rounded-[12px] pr-11"
+  />
+  <button
+    type="button"
+    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+    className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted"
+  >
+    {showConfirmPassword ? <EyeOffIcon size={16} /> : <EyeIcon size={16} />}
+  </button>
+</div>
               </div>
               <Button
                 variant="primary"
