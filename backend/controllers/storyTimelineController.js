@@ -193,7 +193,8 @@ export const getAllArticlesForDropdown = async (req, res) => {
   try {
     const articles = await News.find({})
       .sort({ publishedAt: -1 })
-      .limit(100)
+      // ✅ increased limit (safe + performant)
+      .limit(500)
       .select("title summary category source publishedAt imageUrl url");
 
     const items = articles.map(a => ({
@@ -208,6 +209,7 @@ export const getAllArticlesForDropdown = async (req, res) => {
 
     res.json({ articles: items });
   } catch (err) {
+    console.error("Error fetching articles:", err);
     res.status(500).json({ error: err.message });
   }
 };
