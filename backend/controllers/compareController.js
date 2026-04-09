@@ -1,69 +1,182 @@
 import Comparison from "../models/Comparison.js";
-import { compareNews } from "../services/aiService.js";
+import { compareNews } from "../services/compareService.js";
 import News from "../models/News.js";
 
-// COMPARE TWO NEWS ITEMS
+// ── Convert AI result → safe DB shape ────────────────────────────────────────
+// We extract only the fields the schema definitely accepts without type errors:
+//   similarities: [{ aspect, description, confidence }]
+//   differences:  [{ aspect, description, confidence }]
+//   insights:     saved as plain strings to survive both [String] and [{...}] schemas
+//   overallScore: Number
+//   sentiment:    { item1, item2, comparison }
+//
+// If your Mongoose schema has insights as [String] in practice, we store
+// the content string. If it has [{type,content,importance}] we wrap it.
+// We try both and fall back gracefully.
+function toSafeDB(raw) {
+  if (!raw || typeof raw !== "object") return {};
+
+  const toSimDiff = (item) => {
+    if (!item) return null;
+    if (typeof item === "string")
+      return { aspect: "General", description: item.trim(), confidence: 0.5 };
+    return {
+      aspect: String(item.aspect || item.category || "General").trim(),
+      description: String(
+        item.description || item.content || item.text || "",
+      ).trim(),
+      confidence: typeof item.confidence === "number" ? item.confidence : 0.5,
+    };
+  };
+
+  // For insights: try object shape first; if schema rejects we catch it above
+  const toInsight = (item) => {
+    if (!item) return null;
+    const VALID = ["low", "medium", "high"];
+    if (typeof item === "string")
+      return {
+        type: "key_takeaway",
+        content: item.trim(),
+        importance: "medium",
+      };
+    return {
+      type: String(item.type || "key_takeaway"),
+      content: String(item.content || item.description || ""),
+      importance: VALID.includes(item.importance) ? item.importance : "medium",
+    };
+  };
+
+  const arr = (a, fn) => (Array.isArray(a) ? a.map(fn).filter(Boolean) : []);
+  const sent = raw.sentiment || {};
+
+  return {
+    similarities: arr(raw.similarities, toSimDiff),
+    differences: arr(raw.differences, toSimDiff),
+    insights: arr(raw.insights, toInsight),
+    overallScore: typeof raw.overallScore === "number" ? raw.overallScore : 0.5,
+    sentiment: {
+      item1: String(sent.item1 || sent.topic1 || "neutral"),
+      item2: String(sent.item2 || sent.topic2 || "neutral"),
+      comparison: String(
+        sent.comparison ||
+          sent.analysis ||
+          "Similar sentiment across both articles.",
+      ),
+    },
+  };
+}
+
+// ── Safe DB save — never crashes the response ─────────────────────────────────
+async function safeSave(payload) {
+  try {
+    return await Comparison.create(payload);
+  } catch (err) {
+    // Schema mismatch — try saving with only the primitively-safe subset
+    console.warn(
+      "Full save failed, retrying with minimal payload:",
+      err.message,
+    );
+    try {
+      return await Comparison.create({
+        ...payload,
+        results: {
+          similarities: [],
+          differences: [],
+          insights: [],
+          overallScore: payload.results?.overallScore ?? 0.5,
+          sentiment: payload.results?.sentiment ?? {
+            item1: "neutral",
+            item2: "neutral",
+            comparison: "",
+          },
+        },
+      });
+    } catch (err2) {
+      console.warn("Minimal save also failed, skipping DB save:", err2.message);
+      return null; // Return null — caller will still send full result to frontend
+    }
+  }
+}
+
+// ── Build API response (DB record + full AI fields for the frontend) ──────────
+function buildResponse(saved, rawResults, item1, item2) {
+  const base = saved
+    ? { ...saved.toObject(), results: { ...saved.toObject().results } }
+    : { item1, item2, createdAt: new Date().toISOString() };
+
+  base.results = {
+    ...(base.results || {}),
+    similarities: rawResults.similarities || [],
+    differences:  rawResults.differences  || [],
+    insights:     rawResults.insights     || [],
+    overallScore: rawResults.overallScore ?? 0.5,
+    sentiment:    rawResults.sentiment    || {},
+    socialImpact: rawResults.socialImpact || null,
+  };
+
+  console.log("✅ [Compare] rawResults received:", JSON.stringify(rawResults, null, 2));
+  console.log("✅ [Compare] base.results built:", JSON.stringify(base.results, null, 2));
+
+  return base;
+}
+
+// ── COMPARE BY CONTENT ────────────────────────────────────────────────────────
 export const compareArticles = async (req, res) => {
   try {
     const { item1, item2 } = req.body;
     const userId = req.user.id;
 
-    // Validate input
     if (!item1 || !item2) {
-      return res.status(400).json({ message: "Both items to compare are required" });
+      return res
+        .status(400)
+        .json({ message: "Both items to compare are required" });
     }
 
-    // If article IDs are provided, fetch full articles
-    let comparisonItem1 = { ...item1, type: item1.type || 'article' };
-    let comparisonItem2 = { ...item2, type: item2.type || 'article' };
+    let ci1 = { ...item1, type: item1.type || "article" };
+    let ci2 = { ...item2, type: item2.type || "article" };
 
     if (item1.articleId) {
-      const article1 = await News.findById(item1.articleId);
-      if (article1) {
-        comparisonItem1 = {
-          title: article1.title,
-          content: article1.content,
-          url: article1.url,
-          source: article1.source,
-          type: 'article'
+      const a = await News.findById(item1.articleId);
+      if (a)
+        ci1 = {
+          title: a.title,
+          content: a.content,
+          url: a.url,
+          source: a.source,
+          type: "article",
         };
-      }
     }
-
     if (item2.articleId) {
-      const article2 = await News.findById(item2.articleId);
-      if (article2) {
-        comparisonItem2 = {
-          title: article2.title,
-          content: article2.content,
-          url: article2.url,
-          source: article2.source,
-          type: 'article'
+      const a = await News.findById(item2.articleId);
+      if (a)
+        ci2 = {
+          title: a.title,
+          content: a.content,
+          url: a.url,
+          source: a.source,
+          type: "article",
         };
-      }
     }
 
-    // Process comparison with AI
     const startTime = Date.now();
-    const rawResults = await compareNews(comparisonItem1, comparisonItem2);
+    console.log("🔄 [Compare] Calling compareNews with:", ci1.title, "vs", ci2.title);
+    const rawResults = await compareNews(ci1, ci2);
+    console.log("📨 [Compare] compareNews returned type:", typeof rawResults);
+    console.log("📨 [Compare] has similarities?", Array.isArray(rawResults?.similarities));
     const processingTime = Date.now() - startTime;
 
-    // Sanitize results — ensure arrays contain proper objects, not raw strings
-    const comparisonResults = sanitizeComparisonResults(rawResults);
-
-    // Save comparison to database
-    const comparison = await Comparison.create({
+    const saved = await safeSave({
       userId,
-      item1: comparisonItem1,
-      item2: comparisonItem2,
-      results: comparisonResults,
+      item1: ci1,
+      item2: ci2,
+      results: toSafeDB(rawResults),
       processingTime,
-      aiGenerated: true
+      aiGenerated: true,
     });
 
     res.json({
-      comparison,
-      message: "Comparison completed successfully"
+      comparison: buildResponse(saved, rawResults, ci1, ci2),
+      message: "Comparison completed successfully",
     });
   } catch (err) {
     console.error("Comparison Error:", err);
@@ -71,83 +184,54 @@ export const compareArticles = async (req, res) => {
   }
 };
 
-// ── Helper: sanitize AI results before saving to MongoDB ─────────────────────
-// Guards against Gemini returning a JSON string instead of parsed array etc.
-function sanitizeComparisonResults(raw) {
-  if (!raw || typeof raw !== 'object') return {};
-
-  const sanitizeArray = (arr, defaultShape) => {
-    if (!Array.isArray(arr)) return [];
-    return arr.map(item => {
-      // If item is a string (mis-parsed), wrap it
-      if (typeof item === 'string') return { ...defaultShape, content: item };
-      return item;
-    });
-  };
-
-  return {
-    similarities: sanitizeArray(raw.similarities, { aspect: '', description: '', confidence: 0.5 }),
-    differences:  sanitizeArray(raw.differences,  { aspect: '', description: '', confidence: 0.5 }),
-    insights:     sanitizeArray(raw.insights,      { type: 'key_takeaway', content: '', importance: 'medium' }),
-    overallScore: typeof raw.overallScore === 'number' ? raw.overallScore : 0.5,
-    sentiment:    raw.sentiment && typeof raw.sentiment === 'object' ? raw.sentiment : {
-      item1: 'neutral', item2: 'neutral', comparison: 'similar_sentiment'
-    },
-  };
-}
-
-// COMPARE TWO ARTICLES BY ID
+// ── COMPARE BY ARTICLE IDS ────────────────────────────────────────────────────
 export const compareArticlesById = async (req, res) => {
   try {
     const { articleId1, articleId2 } = req.params;
     const userId = req.user.id;
 
-    // Fetch both articles
     const [article1, article2] = await Promise.all([
       News.findById(articleId1),
-      News.findById(articleId2)
+      News.findById(articleId2),
     ]);
 
     if (!article1 || !article2) {
-      return res.status(404).json({ message: "One or both articles not found" });
+      return res
+        .status(404)
+        .json({ message: "One or both articles not found" });
     }
 
-    // Prepare items for comparison
     const item1 = {
       title: article1.title,
       content: article1.content,
       url: article1.url,
       source: article1.source,
-      type: 'article'
+      type: "article",
     };
-
     const item2 = {
       title: article2.title,
       content: article2.content,
       url: article2.url,
       source: article2.source,
-      type: 'article'
+      type: "article",
     };
 
-    // Process comparison with AI
     const startTime = Date.now();
     const rawResults = await compareNews(item1, item2);
     const processingTime = Date.now() - startTime;
-    const comparisonResults = sanitizeComparisonResults(rawResults);
 
-    // Save comparison to database
-    const comparison = await Comparison.create({
+    const saved = await safeSave({
       userId,
       item1,
       item2,
-      results: comparisonResults,
+      results: toSafeDB(rawResults),
       processingTime,
-      aiGenerated: true
+      aiGenerated: true,
     });
 
     res.json({
-      comparison,
-      message: "Articles compared successfully"
+      comparison: buildResponse(saved, rawResults, item1, item2),
+      message: "Articles compared successfully",
     });
   } catch (err) {
     console.error("Article Comparison Error:", err);
@@ -155,7 +239,7 @@ export const compareArticlesById = async (req, res) => {
   }
 };
 
-// GET COMPARISON HISTORY
+// ── GET HISTORY ───────────────────────────────────────────────────────────────
 export const getComparisonHistory = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -166,10 +250,12 @@ export const getComparisonHistory = async (req, res) => {
     const comparisons = await Comparison.find({ userId })
       .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(limit);
+      .limit(limit)
+      .select(
+        "item1.title item2.title results.overallScore results.sentiment createdAt processingTime",
+      );
 
     const total = await Comparison.countDocuments({ userId });
-    const totalPages = Math.ceil(total / limit);
 
     res.json({
       comparisons,
@@ -177,46 +263,40 @@ export const getComparisonHistory = async (req, res) => {
         page,
         limit,
         total,
-        totalPages,
-        hasNext: page < totalPages,
-        hasPrev: page > 1
-      }
+        totalPages: Math.ceil(total / limit),
+        hasNext: page < Math.ceil(total / limit),
+        hasPrev: page > 1,
+      },
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
 
-// GET SINGLE COMPARISON
+// ── GET SINGLE ────────────────────────────────────────────────────────────────
 export const getComparison = async (req, res) => {
   try {
-    const { comparisonId } = req.params;
-    const userId = req.user.id;
-
-    const comparison = await Comparison.findOne({ _id: comparisonId, userId });
-
-    if (!comparison) {
+    const comparison = await Comparison.findOne({
+      _id: req.params.comparisonId,
+      userId: req.user.id,
+    });
+    if (!comparison)
       return res.status(404).json({ message: "Comparison not found" });
-    }
-
     res.json({ comparison });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
 
-// DELETE COMPARISON
+// ── DELETE ────────────────────────────────────────────────────────────────────
 export const deleteComparison = async (req, res) => {
   try {
-    const { comparisonId } = req.params;
-    const userId = req.user.id;
-
-    const comparison = await Comparison.findOneAndDelete({ _id: comparisonId, userId });
-
-    if (!comparison) {
+    const comparison = await Comparison.findOneAndDelete({
+      _id: req.params.comparisonId,
+      userId: req.user.id,
+    });
+    if (!comparison)
       return res.status(404).json({ message: "Comparison not found" });
-    }
-
     res.json({ message: "Comparison deleted successfully" });
   } catch (err) {
     res.status(500).json({ error: err.message });

@@ -19,6 +19,11 @@ const userSchema = new mongoose.Schema({
     personalizedAlerts: { type: Boolean, default: true },
     dailyDigest: { type: Boolean, default: false }
   },
+  // ✅ ADDED: Reading preferences stored in DB
+  textSize: { type: String, enum: ['Small', 'Medium', 'Large'], default: 'Medium' },
+  language: { type: String, enum: ['English', 'Hindi', 'Marathi'], default: 'English' },
+  feedLayout: { type: String, enum: ['Card Grid', 'List Grid'], default: 'Card Grid' },
+
   readingHistory: [{
     articleId: { type: mongoose.Schema.Types.ObjectId, ref: 'News' },
     readAt: { type: Date, default: Date.now },

@@ -51,8 +51,17 @@ async function run() {
   await mongoose.connect(process.env.MONGO_URI);
   console.log("✅ Connected to MongoDB");
 
-  const articles = await News.find({}, { _id: 1, title: 1, content: 1 });
-  console.log(`📰 Updating sentiment for ${articles.length} articles...`);
+  const articles = await News.find(
+  { $or: [{ sentiment: { $exists: false } }, { sentiment: null }] },
+  { _id: 1, title: 1, content: 1 }
+);
+console.log(`📰 Updating sentiment for ${articles.length} articles (skipping already processed)...`);
+
+if (articles.length === 0) {
+  console.log("✅ All articles already have sentiment. Nothing to do.");
+  await mongoose.disconnect();
+  process.exit(0);
+}
 
   let positive = 0, negative = 0, neutral = 0;
 

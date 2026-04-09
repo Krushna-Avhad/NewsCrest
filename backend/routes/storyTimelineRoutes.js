@@ -4,6 +4,7 @@ import {
   getMyStories,
   getStory,
   getArticleTimeline,
+  getStoriesForSavedArticles,
   followAStory,
   unfollowAStory,
   processArticle,
@@ -33,6 +34,7 @@ router.post("/follow/:storyId",       followAStory);
 router.delete("/follow/:storyId",     unfollowAStory);
 router.post("/generate",              generateFromInput);
 router.post("/generate-from-history", generateFromHistory);
+router.post("/for-saved-articles",    getStoriesForSavedArticles);
 router.post("/record-activity",       recordActivity);
 
 // Admin / maintenance

@@ -4,53 +4,47 @@ import { summarizeNews, filterNewsAdvanced } from "../services/aiService.js";
 import { processChatbotQuery } from "../services/aiService.js";
 import User from "../models/User.js";
 import News from "../models/News.js";
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import { recordUserActivity } from "../services/storyTimelineService.js";
+import Groq from "groq-sdk";
+import { recordUserActivity, processArticleIntoTimeline } from "../services/storyTimelineService.js";
 
-// 1. INITIALIZE Gemini (Do this at the TOP)
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+// Initialize Groq
+const groq = new Groq({ apiKey: process.env.GROK_API_KEY });
 
-// 2. HELPER FUNCTION (Define this before the controller uses it)
-async function processWithGemini(query) {
+// Chat helper using Groq
+async function processWithGroq(query) {
   try {
-    // Try the standard model name first
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const prompt = `You are NewsCrest AI. 
+- If the user is GREETING you or asking WHO YOU ARE, set "isNewsQuery": false.
+- If the user is asking for NEWS or specific TOPICS, set "isNewsQuery": true.
 
-    const prompt = `
-      You are NewsCrest AI. 
-      - If the user is GREETING you or asking WHO YOU ARE, set "isNewsQuery": false.
-      - If the user is asking for NEWS or specific TOPICS, set "isNewsQuery": true.
-  
-      User message: "${query}"
-  
-      Respond ONLY in JSON:
-      {
-      "isNewsQuery": boolean,
-      "keywords": "search terms",
-      "text": "your response"
-      }
-    `;
+User message: "${query}"
 
-    const result = await model.generateContent(prompt);
-    const responseText = result.response.text();
-    
-    // Safety check for empty or malformed AI response
-    if (!responseText) throw new Error("Empty AI response");
+Respond ONLY in JSON:
+{
+"isNewsQuery": boolean,
+"keywords": "search terms",
+"text": "your response"
+}`;
 
-    const cleanedJson = responseText.replace(/```json|```/g, "").trim();
+    const response = await groq.chat.completions.create({
+      model: "llama-3.1-8b-instant",
+      messages: [{ role: "user", content: prompt }],
+      max_tokens: 200,
+    });
+
+    const raw = response.choices[0]?.message?.content?.trim() || "";
+    if (!raw) throw new Error("Empty AI response");
+    const cleanedJson = raw.replace(/```json|```/g, "").trim();
     return JSON.parse(cleanedJson);
   } catch (error) {
-    // 429 Quota or 404 Error Fallback
-    const greetings = ['hi', 'hello', 'who are you', 'what is this'];
+    const greetings = ["hi", "hello", "who are you", "what is this"];
     const isGreeting = greetings.some(g => query.toLowerCase().includes(g));
-    
-
-    return { 
-      isNewsQuery: !isGreeting, // If it's a greeting, don't search news
-      keywords: query, 
-      text: isGreeting 
-        ? "I am NewsCrest AI! I can help you find the latest news. What are you interested in today?" 
-        : `I'm checking our archives for "${query}"...`
+    return {
+      isNewsQuery: !isGreeting,
+      keywords: query,
+      text: isGreeting
+        ? "I am NewsCrest AI! I can help you find the latest news. What are you interested in today?"
+        : `I'm checking our archives for "${query}"...`,
     };
   }
 }
@@ -63,15 +57,13 @@ export const getMyFeed = async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
-    // 2. Fetch news - Attempt to get from Database first (Pro Tip implementation)
-    // We fetch the latest 100 articles to have a good variety to filter from
-    let news = await News.find().sort({ publishedAt: -1 }).limit(100);
+    // 2. Fetch a large pool from DB — raised from 100 to 500
+    let news = await News.find().sort({ publishedAt: -1 }).limit(500);
 
-    // 3. Fallback: If Database is empty, fetch from API directly
+    // 3. Fallback: If Database is empty, fetch from external API
     if (!news || news.length === 0) {
       console.log("DB empty, fetching from API...");
-      news = await fetchAllCategories(); 
-      // Optional: Save these to DB so next time it's faster
+      news = await fetchAllCategories();
       await saveNewsToDatabase(news);
     }
 
@@ -79,52 +71,51 @@ export const getMyFeed = async (req, res) => {
       return res.status(404).json({ error: "No news found at the moment" });
     }
 
-    // 4. Filter news based on user interests
+    // 4. Filter by user interests from the full 500 pool
     const filtered = filterNewsAdvanced(news, user);
-
-    // 5. If no interest match, fallback to the general pool
     const newsToProcess = filtered.length > 0 ? filtered : news;
 
-    // 6. Limit to avoid Gemini/AI API overload (Max 10 summaries)
-    const limitedNews = newsToProcess.slice(0, 10);
+    // 5. AI summarization limited to 10 — sequential to avoid Groq 429
+    const limitedForAI = newsToProcess.slice(0, 10);
+    const summarized = [];
 
-    // 7. Summarize using AI (Gemini)
-    const summarized = await Promise.all(
-      limitedNews.map(async (item) => {
-        // Use content, or description, or title as the source for AI
-        const text = item.content || item.description || item.summary || item.title;
+    for (const item of limitedForAI) {
+      const text = item.content || item.description || item.summary || item.title;
+      try {
+        // Pass item._id so aiService can cache & skip re-summarizing
+        const summary = await summarizeNews(text, item._id);
+        summarized.push({
+          _id: item._id,
+          title: item.title,
+          summary,
+          source: item.source?.name || item.source,
+          url: item.url,
+          imageUrl: item.imageUrl || item.urlToImage,
+          publishedAt: item.publishedAt,
+          category: item.category,
+          sentiment: item.sentiment,
+          trending: item.trending,
+          tags: item.tags,
+        });
+      } catch {
+        summarized.push({
+          _id: item._id,
+          title: item.title,
+          summary: item.description || item.summary || "Click to read more...",
+          source: item.source?.name || item.source,
+          url: item.url,
+          imageUrl: item.imageUrl || item.urlToImage,
+          publishedAt: item.publishedAt,
+          category: item.category,
+          sentiment: item.sentiment,
+          trending: item.trending,
+          tags: item.tags,
+        });
+      }
+    }
 
-        try {
-          const summary = await summarizeNews(text);
-
-          // We return the EXACT structure your previous version used
-          // so your Frontend (React/Flutter) works without changes
-          return {
-            title: item.title,
-            summary: summary,
-            source: item.source?.name || item.source, // Handles both API and DB shapes
-            url: item.url,
-            image: item.imageUrl || item.urlToImage, // Handles both field name variations
-            publishedAt: item.publishedAt,
-            category: item.category // Added category for better UI display
-          };
-        } catch (aiErr) {
-          // If Gemini fails for one article, don't crash the whole feed
-          return {
-            title: item.title,
-            summary: item.description || item.summary || "Click to read more...",
-            source: item.source?.name || item.source,
-            url: item.url,
-            image: item.imageUrl || item.urlToImage,
-            publishedAt: item.publishedAt,
-            category: item.category
-          };
-        }
-      })
-    );
-
-    // 8. Send final response
-    res.json(summarized);
+    // 6. ✅ Return { news } shape — fixes api.js reading data.news as undefined
+    res.json({ news: summarized });
 
   } catch (err) {
     console.error("Feed Error:", err.message);
@@ -136,7 +127,7 @@ export const getMyFeed = async (req, res) => {
 export const getAllNews = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 20;
+    const limit = parseInt(req.query.limit) || 50; // ✅ raised from 20 → 50
     const category = req.query.category;
     const skip = (page - 1) * limit;
 
@@ -206,21 +197,20 @@ export const getPersonalizedFeed = async (req, res) => {
     }
 
     // Add location-based news (guard against empty $or which causes MongoDB error)
-    if (user.city || user.state) {
-      const locationOr = [];
-      if (user.city) locationOr.push({ 'location.city': user.city });
-      if (user.state) locationOr.push({ 'location.state': user.state });
-      if (locationOr.length > 0) query.$or = locationOr;
-    }
+    // if (user.city || user.state) {
+    //   const locationOr = [];
+    //   if (user.city) locationOr.push({ 'location.city': user.city });
+    //   if (user.state) locationOr.push({ 'location.state': user.state });
+    //   if (locationOr.length > 0) query.$or = locationOr;
+    // }
 
-    // Profile-based filtering
-    const profileCategories = getProfileCategories(user.profileType);
-    if (profileCategories.length > 0) {
-      query.category = query.category || { $in: [] };
-      if (Array.isArray(query.category.$in)) {
-        query.category.$in = [...new Set([...query.category.$in, ...profileCategories])];
-      }
-    }
+    // Only add profile categories if user has NO interests set
+    // if (!user.interests || user.interests.length === 0) {
+    //   const profileCategories = getProfileCategories(user.profileType);
+    //   if (profileCategories.length > 0) {
+    //     query.category = { $in: profileCategories };
+    //   }
+    // }
 
     const news = await News.find(query)
       .sort({ publishedAt: -1, trending: -1 })
@@ -336,12 +326,12 @@ if (key === "local") {
   if (city || state) {
     const locationOr = [];
     if (city) locationOr.push(
-      { title: new RegExp(city, 'i') },
-      { content: new RegExp(city, 'i') }
+      { title: new RegExp(`\\b${city}\\b`, 'i') },
+      { content: new RegExp(`\\b${city}\\b`, 'i') }
     );
     if (state) locationOr.push(
-      { title: new RegExp(state, 'i') },
-      { content: new RegExp(state, 'i') }
+      { title: new RegExp(`\\b${state}\\b`, 'i') },
+      { content: new RegExp(`\\b${state}\\b`, 'i') }
     );
     localQuery = { $or: locationOr };
   } else {
@@ -353,9 +343,8 @@ if (key === "local") {
     .skip(skip)
     .limit(limit);
 
-  if (news.length === 0) {
-    news = await News.find().sort({ publishedAt: -1 }).skip(skip).limit(limit);
-  }
+  // NO random fallback — if no local news, return empty
+  // Frontend will show "No local news found" message
 
   const total = await News.countDocuments(localQuery);
   const totalPages = Math.ceil(total / limit);
@@ -374,13 +363,20 @@ const searchTerms = categoryAliasMap[key] || [
 
 const query = { category: { $in: searchTerms } };;
 
+    // ✅ Respect sortBy param from frontend tab selection
+    const sortBy = req.query.sortBy || "date";
+    const sortOptions =
+      sortBy === "trending"
+        ? { trending: -1, viewCount: -1, publishedAt: -1 }
+        : { publishedAt: -1 };
+
     let news = await News.find(query)
-      .sort({ publishedAt: -1 })
+      .sort(sortOptions)
       .skip(skip)
       .limit(limit);
 
     if (news.length === 0) {
-      news = await News.find().sort({ publishedAt: -1 }).skip(skip).limit(limit);
+      news = await News.find().sort(sortOptions).skip(skip).limit(limit);
     }
 
     const total = await News.countDocuments(query);
@@ -406,27 +402,39 @@ export const getLocalNewsHandler = async (req, res) => {
     const user = await User.findById(req.user.id);
     if (!user) return res.status(404).json({ error: "User not found" });
 
-    const city = user.city || "India";
-    
-    // Regex search for city name in title or content
-    const query = {
-      $or: [
-        { title: new RegExp(city, 'i') },
-        { content: new RegExp(city, 'i') }
-      ]
-    };
+    const city = user.city;
+    const state = user.state;
 
-    let news = await News.find(query).sort({ publishedAt: -1 }).limit(20);
-
-    // Fallback to recent news if no city-specific matches
-    if (news.length === 0) {
-      news = await News.find().sort({ publishedAt: -1 }).limit(10);
+    if (!city && !state) {
+      // User hasn't set location — return empty so frontend hides Local section
+      return res.json({ news: [], location: {}, message: "No location set" });
     }
 
+    // Build strict location query — must match city OR state in title/content
+    const orConditions = [];
+    if (city) {
+      orConditions.push(
+        { title: new RegExp(`\\b${city}\\b`, 'i') },
+        { content: new RegExp(`\\b${city}\\b`, 'i') }
+      );
+    }
+    if (state) {
+      orConditions.push(
+        { title: new RegExp(`\\b${state}\\b`, 'i') },
+        { content: new RegExp(`\\b${state}\\b`, 'i') }
+      );
+    }
+
+    const news = await News.find({ $or: orConditions })
+      .sort({ publishedAt: -1 })
+      .limit(20);
+
     res.json({ 
-      news, 
-      location: { city: user.city, state: user.state },
-      message: news.length > 0 ? `News for ${city}` : "Showing general news"
+      news,
+      location: { city, state },
+      message: news.length > 0 
+        ? `News for ${[city, state].filter(Boolean).join(", ")}` 
+        : "No local news found for your area"
     });
   } catch (err) {
     console.error("Local News Error:", err.message);
@@ -511,7 +519,11 @@ export const saveArticle = async (req, res) => {
 
     // Persist rich snapshot for timeline generation (non-blocking)
     const savedArticle = await News.findById(articleId);
-    if (savedArticle) recordUserActivity(userId, "saved", savedArticle).catch(() => {});
+    if (savedArticle) {
+      recordUserActivity(userId, "saved", savedArticle).catch(() => {});
+      // Add to story timeline so updates appear on the Story Timeline page
+      processArticleIntoTimeline(savedArticle).catch(() => {});
+    }
 
     res.json({ message: "Article saved successfully" });
   } catch (err) {
@@ -594,6 +606,24 @@ export const refreshNews = async (req, res) => {
   }
 };
 
+// ✅ GET ARTICLE COUNT PER CATEGORY (for CategoriesPage grid)
+export const getCategoryCounts = async (req, res) => {
+  try {
+    const counts = await News.aggregate([
+      { $group: { _id: "$category", count: { $sum: 1 } } },
+      { $sort: { count: -1 } }
+    ]);
+    // Return as a flat map: { Technology: 412, Sports: 339, ... }
+    const countMap = {};
+    counts.forEach(({ _id, count }) => {
+      if (_id) countMap[_id] = count;
+    });
+    res.json({ counts: countMap });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
 // ✅ HELPER FUNCTION: GET CATEGORIES BASED ON PROFILE TYPE
 function getProfileCategories(profileType) {
   const profileMap = {
@@ -618,11 +648,11 @@ export const getChatbotResponse = async (req, res) => {
     const { query } = req.body;
 
     // 1. Get AI analysis
-    const aiResponse = await processWithGemini(query);
+    const aiResponse = await processWithGroq(query);
 
     let articles = [];
 
-    // 2. Only search DB if Gemini says it's a news-related question
+    // 2. Only search DB if Groq says it's a news-related question
     if (aiResponse.isNewsQuery === true) {
       const searchTerms = aiResponse.keywords
         .toLowerCase()
@@ -671,39 +701,3 @@ export const getChatbotResponse = async (req, res) => {
     });
   }
 };
-
-// export const getChatbotResponse = async (req, res) => {
-//   try {
-//     const { query } = req.body;
-//     const aiResponse = await processWithGemini(query); 
-
-//     let articles = [];
-    
-//     // ONLY search the database if the AI confirms it's a news-related query
-//     if (aiResponse.isNewsQuery) {
-//       articles = await News.find({
-//         $or: [
-//           { title: { $regex: aiResponse.keywords, $options: "i" } },
-//           { category: { $regex: aiResponse.keywords, $options: "i" } }
-//         ]
-//       }).sort({ publishedAt: -1 }).limit(3);
-
-//       // If no specific match, get latest 3 as a helpful backup
-//       if (articles.length === 0) {
-//         articles = await News.find().sort({ publishedAt: -1 }).limit(3);
-//       }
-//     }
-
-//     res.json({
-//       reply: aiResponse.text,
-//       articles: articles // This will be [] if it's just a greeting like "Who are you?"
-//     });
-
-//   } catch (error) {
-//     console.error("💥 Chatbot Controller Error:", error);
-//     res.status(200).json({ 
-//       reply: "I'm having a bit of trouble with my AI brain. How else can I help?", 
-//       articles: [] 
-//     });
-//   }
-// };

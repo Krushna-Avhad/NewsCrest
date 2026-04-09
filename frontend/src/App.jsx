@@ -17,6 +17,7 @@ import NotesPage from "./pages/NotesPage";
 import HatkePage from "./pages/HatkePage";
 import ProfilePage from "./pages/ProfilePage";
 import StoryTimelinePage from "./pages/StoryTimelinePage";
+import PerspectivesPage from "./pages/PerspectivesPage";
 
 // Pages that require authentication
 const PROTECTED = new Set([
@@ -33,6 +34,7 @@ const PROTECTED = new Set([
   "hatke",
   "timeline",
   "profile",
+  "perspectives",
 ]);
 
 const PAGE_MAP = {
@@ -53,16 +55,33 @@ const PAGE_MAP = {
   hatke: HatkePage,
   timeline: StoryTimelinePage,
   profile: ProfilePage,
+  perspectives: PerspectivesPage,
+};
+
+// ── Text size class map ────────────────────────────────────────────────────────
+const TEXT_SIZE_CLASS = {
+  Small: "nc-text-small",
+  Medium: "nc-text-medium",
+  Large: "nc-text-large",
 };
 
 function Router() {
-  const { page, user } = useApp();
+  const { page, user, readingPrefs } = useApp();
 
   // Redirect unauthenticated users away from protected pages
   const resolvedPage = PROTECTED.has(page) && !user ? "login" : page;
 
   const Page = PAGE_MAP[resolvedPage] || LandingPage;
-  return <Page />;
+
+  // ✅ FIXED: apply text size and language globally — no UI/design change
+  const sizeClass = TEXT_SIZE_CLASS[readingPrefs?.textSize] || "nc-text-medium";
+  const lang = readingPrefs?.language || "English";
+
+  return (
+    <div className={sizeClass} data-lang={lang}>
+      <Page />
+    </div>
+  );
 }
 
 export default function App() {

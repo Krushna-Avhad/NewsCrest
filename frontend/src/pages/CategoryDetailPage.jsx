@@ -29,32 +29,65 @@ export default function CategoryDetailPage() {
   const { activeCat, openArticle, setPage, feedArticles, headlines } = useApp();
   const [articles, setArticles] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [tab, setTab] = useState("Latest");
+  const [pagination, setPagination] = useState(null);
+  const [currentPage, setCurrentPage] = useState(1);
+
+  // Map tab label to the sortBy param the backend understands
+  const TAB_SORT = {
+    Latest:   "date",
+    Trending: "trending",
+  };
 
   useEffect(() => {
     if (!activeCat) return;
+    // Reset everything on category OR tab change
+    setArticles([]);
+    setPagination(null);
+    setCurrentPage(1);
     setLoading(true);
+
+    const sortBy = TAB_SORT[tab] || "date";
+
     newsAPI
-      .getByCategory(activeCat)
-      .then((data) => setArticles(data))
+      .getByCategory(activeCat, 1, 50, sortBy)
+      .then(({ articles: fetched, pagination: pg }) => {
+        setArticles(fetched);
+        setPagination(pg);
+      })
       .catch(() => {
-        // Fallback to in-memory filtered articles
         const all = [...(headlines || []), ...(feedArticles || [])].filter(
           (a, i, arr) => arr.findIndex((x) => x.id === a.id) === i,
         );
         setArticles(all.filter((a) => a.category === activeCat));
       })
       .finally(() => setLoading(false));
-  }, [activeCat]);
+  }, [activeCat, tab]); // ✅ tab added here — re-fetches on every tab switch
 
-  const sorted =
-    tab === "Trending"
-      ? [...articles].sort(
-          (a, b) => (b.engagement?.saves || 0) - (a.engagement?.saves || 0),
-        )
-      : [...articles].sort(
-          (a, b) => new Date(b.publishedAt || 0) - new Date(a.publishedAt || 0),
-        );
+  // Load more handler
+  const loadMore = async () => {
+    if (!pagination?.hasNext || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const nextPage = currentPage + 1;
+      const sortBy = TAB_SORT[tab] || "date";
+      const { articles: more, pagination: pg } = await newsAPI.getByCategory(
+        activeCat,
+        nextPage,
+        50,
+        sortBy, // ✅ maintain sort when loading more
+      );
+      setArticles((prev) => [...prev, ...more]);
+      setPagination(pg);
+      setCurrentPage(nextPage);
+    } catch (_) {}
+    setLoadingMore(false);
+  };
+
+  // Backend already returns articles sorted correctly per tab
+  // Just use articles directly — no client-side re-sort needed
+  const sorted = articles;
 
   const catColor = CAT_COLORS[activeCat] || "#741515";
 
@@ -79,7 +112,7 @@ export default function CategoryDetailPage() {
           <p className="text-white/60 text-[13.5px]">
             {loading
               ? "Loading..."
-              : `${articles.length} stories · Updated just now`}
+              : `${pagination?.total ?? articles.length} stories · Updated just now`}
           </p>
         </div>
         <button
@@ -145,13 +178,34 @@ export default function CategoryDetailPage() {
           ))}
         </div>
       ) : sorted.length > 1 ? (
-        <div className="grid grid-cols-3 gap-5">
-          {sorted.slice(1).map((a) => (
-            <div key={a.id} className="card-reveal">
-              <NewsCard article={a} onClick={openArticle} />
+        <>
+          <div className="grid grid-cols-3 gap-5">
+            {sorted.slice(1).map((a) => (
+              <div key={a.id} className="card-reveal">
+                <NewsCard article={a} onClick={openArticle} />
+              </div>
+            ))}
+          </div>
+
+          {/* Load More */}
+          {pagination?.hasNext && (
+            <div className="flex flex-col items-center mt-8 gap-2">
+              <button
+                onClick={loadMore}
+                disabled={loadingMore}
+                className="px-8 py-3 rounded-[12px] border border-gold/40 bg-white font-semibold text-[13px] hover:bg-lemon hover:border-gold transition-all duration-200 disabled:opacity-50"
+                style={{ color: catColor }}
+              >
+                {loadingMore
+                  ? "Loading..."
+                  : `Load More · ${pagination.total - articles.length} remaining`}
+              </button>
+              <span className="text-[11px] text-text-muted">
+                Showing {articles.length} of {pagination.total} articles
+              </span>
             </div>
-          ))}
-        </div>
+          )}
+        </>
       ) : !sorted.length ? (
         <div className="text-center py-16 bg-white rounded-card border border-gold-subtle">
           <h3 className="font-playfair text-xl font-bold text-text-primary mb-2">

@@ -13,8 +13,10 @@ import {
   unsaveArticle,
   getSavedArticles,
   getChatbotResponse,
-  refreshNews
+  refreshNews,
+  getCategoryCounts,
 } from "../controllers/newsController.js";
+
 
 const router = express.Router();
 
@@ -23,6 +25,7 @@ router.get("/", getAllNews);
 router.get("/headlines", getTopHeadlines);
 router.get("/trending", getTrendingNews);
 router.get("/category/:category", optionalAuth, getCategoryNews);
+router.get("/category-counts", getCategoryCounts);
 router.get("/good", getGoodNewsHandler);
 router.post("/refresh", refreshNews);
 

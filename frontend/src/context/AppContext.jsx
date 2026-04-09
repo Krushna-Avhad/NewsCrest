@@ -37,6 +37,12 @@ export function AppProvider({ children }) {
   const [localArticles, setLocalArticles] = useState([]);
   const [newsLoading, setNewsLoading] = useState(false);
 
+  // Pagination for "load more" in Explore/Categories
+  const [newsPagination, setNewsPagination] = useState(null);
+  const [newsPage, setNewsPage] = useState(1);
+  const [allArticles, setAllArticles] = useState([]);
+  const [allArticlesLoading, setAllArticlesLoading] = useState(false);
+
   // Saved / Notes / Alerts (require auth)
   const [savedArticles, setSavedArticles] = useState([]);
   const [notes, setNotes] = useState([]);
@@ -46,7 +52,8 @@ export function AppProvider({ children }) {
   // Compare / prefs
   const [compareArticle, setCompareArticle] = useState(null);
   const [chatbotInitialQuery, setChatbotInitialQuery] = useState(null);
-  const [readingPrefs, setReadingPrefs] = useState({
+  // ✅ FIXED: raw setter kept internal; setReadingPrefs persists to DB
+  const [readingPrefs, setReadingPrefsRaw] = useState({
     language: "English",
     feedLayout: "Card Grid",
     textSize: "Medium",
@@ -66,6 +73,12 @@ export function AppProvider({ children }) {
         .then((data) => {
           // getProfile returns the user object directly (no wrapper)
           setUser(data);
+          // ✅ FIXED: seed reading prefs from DB on auto-login
+          setReadingPrefsRaw({
+            language: data.language || "English",
+            feedLayout: data.feedLayout || "Card Grid",
+            textSize: data.textSize || "Medium",
+          });
         })
         .catch(() => {
           // Token expired / invalid — clear it
@@ -89,21 +102,36 @@ export function AppProvider({ children }) {
 const loadPublicNews = async () => {
     setNewsLoading(true);
     try {
-      const [hl, trending] = await Promise.allSettled([
+      const [hl, trending, all] = await Promise.allSettled([
         newsAPI.getHeadlines(),
         newsAPI.getTrending(),
+        newsAPI.getAll({ page: 1, limit: 50 }), // ✅ load 50 articles upfront
       ]);
+
       if (hl.status === "fulfilled" && hl.value.length > 0) {
         setHeadlines(hl.value);
-        setFeedArticles((prev) => (prev.length === 0 ? hl.value : prev));
       }
+
       if (trending.status === "fulfilled" && trending.value.length > 0) {
         setTrendingArticles(trending.value);
-      } else {
-        // Fallback — use headlines as trending if trending fetch fails
-        setTrendingArticles((prev) =>
-          prev.length === 0 && hl.status === "fulfilled" ? hl.value : prev
-        );
+      }
+
+      if (all.status === "fulfilled") {
+        const { articles, pagination } = all.value;
+        setAllArticles(articles);
+        setNewsPagination(pagination);
+        // Use as feedArticles fallback until personalized feed loads
+        if (articles.length > 0) {
+          setFeedArticles((prev) => (prev.length === 0 ? articles : prev));
+          // Use as headlines fallback if headlines fetch failed
+          if (hl.status !== "fulfilled" || hl.value.length === 0) {
+            setHeadlines(articles.slice(0, 10));
+          }
+          // Use as trending fallback
+          if (trending.status !== "fulfilled" || trending.value.length === 0) {
+            setTrendingArticles(articles.slice(0, 15));
+          }
+        }
       }
     } catch (_) {}
     setNewsLoading(false);
@@ -123,6 +151,20 @@ const loadPublicNews = async () => {
         setLocalArticles(local.value);
       }
     } catch (_) {}
+  };
+
+  // ── Load more articles (pagination for Explore page) ───────────────────────
+  const loadMoreArticles = async () => {
+    if (!newsPagination?.hasNext || allArticlesLoading) return;
+    setAllArticlesLoading(true);
+    try {
+      const nextPage = newsPage + 1;
+      const { articles, pagination } = await newsAPI.getAll({ page: nextPage, limit: 50 });
+      setAllArticles((prev) => [...prev, ...articles]);
+      setNewsPagination(pagination);
+      setNewsPage(nextPage);
+    } catch (_) {}
+    setAllArticlesLoading(false);
   };
 
   // ── Full dashboard reload (called manually e.g. pull-to-refresh) ───────────
@@ -214,6 +256,12 @@ const loadPublicNews = async () => {
         const data = await authAPI.login(email, password);
         // login returns { token, user }
         setUser(data.user);
+        // ✅ FIXED: seed reading prefs from DB on login
+        setReadingPrefsRaw({
+          language: data.user.language || "English",
+          feedLayout: data.user.feedLayout || "Card Grid",
+          textSize: data.user.textSize || "Medium",
+        });
         setPage("dashboard");
         // Reload alerts after a short delay — backend processes notifications
         // asynchronously after login, so we wait 2s before fetching
@@ -261,6 +309,12 @@ const loadPublicNews = async () => {
         const data = await authAPI.verifyOtp(email, otp);
         // verifyOtp returns { token, user, message }
         setUser(data.user);
+        // ✅ FIXED: seed reading prefs from DB after OTP verify
+        setReadingPrefsRaw({
+          language: data.user.language || "English",
+          feedLayout: data.user.feedLayout || "Card Grid",
+          textSize: data.user.textSize || "Medium",
+        });
         setPendingOtpEmail(null);
         setPage("dashboard");
         // Reload alerts after backend processes first-login notifications
@@ -307,6 +361,29 @@ const loadPublicNews = async () => {
     setUser(data.user || data);
     // Reload personalised feed with updated interests/profile
     await loadPersonalisedFeed();
+    return data;
+  }, []);
+
+  // ✅ ADDED: setReadingPrefs persists to DB (fire-and-forget) + updates local state
+  const setReadingPrefs = useCallback((updater) => {
+    setReadingPrefsRaw((prev) => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      // Persist to backend without blocking UI
+      authAPI.updatePreferences({
+        textSize: next.textSize,
+        language: next.language,
+        feedLayout: next.feedLayout,
+      }).then((data) => {
+        // Keep user object in sync with saved prefs
+        if (data?.user) setUser(data.user);
+      }).catch(() => {});
+      return next;
+    });
+  }, []);
+
+  // ✅ ADDED: change password — validates old, hashes new on backend
+  const changePassword = useCallback(async ({ oldPassword, newPassword }) => {
+    const data = await authAPI.changePassword({ oldPassword, newPassword });
     return data;
   }, []);
 
@@ -466,12 +543,17 @@ const loadPublicNews = async () => {
         pendingOtpEmail,
         logout,
         updateProfile,
+        changePassword,
         headlines,
         feedArticles,
         trendingArticles,
         localArticles,
         newsLoading,
         loadDashboardData,
+        allArticles,
+        allArticlesLoading,
+        newsPagination,
+        loadMoreArticles,
         savedArticles,
         toggleSaveArticle,
         isArticleSaved,

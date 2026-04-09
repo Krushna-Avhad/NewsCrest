@@ -3,7 +3,7 @@
 import axios from "axios";
 const BASE_URL =
   (typeof import.meta !== "undefined" && import.meta.env?.VITE_API_BASE_URL) ||
-  "http://localhost:3000/api";
+  "http://localhost:5000/api";
 
 // ─── Token helpers ────────────────────────────────────────────────────────────
 export const getToken = () => localStorage.getItem("nc_token");
@@ -105,6 +105,12 @@ export const authAPI = {
   getProfile: () => request("/auth/profile"), // returns user object directly
   updateProfile: (payload) =>
     request("/auth/profile", { method: "PUT", body: JSON.stringify(payload) }),
+  // ✅ ADDED: change password with old password validation
+  changePassword: (payload) =>
+    request("/auth/change-password", { method: "PUT", body: JSON.stringify(payload) }),
+  // ✅ ADDED: update reading preferences + notification prefs
+  updatePreferences: (payload) =>
+    request("/auth/preferences", { method: "PUT", body: JSON.stringify(payload) }),
   logout: async () => {
     try {
       await request("/auth/logout", { method: "POST" });
@@ -122,13 +128,18 @@ export const newsAPI = {
     const q = new URLSearchParams(params).toString();
     const data = await request(`/news${q ? `?${q}` : ""}`);
     // returns { news, pagination }
-    return (data.news || []).map(normaliseArticle);
+    return {
+      articles: (data.news || []).map(normaliseArticle),
+      pagination: data.pagination || null,
+    };
   },
 
   getFeed: async () => {
     const data = await request("/news/feed");
-    // returns { news, pagination, ... }
-    return (data.news || []).map(normaliseArticle);
+    // getMyFeed returns { news: [...] } after our fix
+    // data itself might be the array if old response — handle both shapes
+    const articles = Array.isArray(data) ? data : (data.news || []);
+    return articles.map(normaliseArticle);
   },
 
   getHeadlines: async () => {
@@ -143,12 +154,15 @@ export const newsAPI = {
     return (data.news || []).map(normaliseArticle);
   },
 
-  getByCategory: async (category) => {
+  getByCategory: async (category, page = 1, limit = 50, sortBy = "date") => {
     const data = await request(
-      `/news/category/${encodeURIComponent(category)}`,
+      `/news/category/${encodeURIComponent(category)}?page=${page}&limit=${limit}&sortBy=${sortBy}`,
     );
     // returns { news, pagination }
-    return (data.news || []).map(normaliseArticle);
+    return {
+      articles: (data.news || []).map(normaliseArticle),
+      pagination: data.pagination || null,
+    };
   },
 
   getLocal: async () => {
@@ -178,6 +192,12 @@ export const newsAPI = {
   saveArticle: (id) => request(`/news/${id}/save`, { method: "POST" }),
   unsaveArticle: (id) => request(`/news/${id}/save`, { method: "DELETE" }),
   refresh: () => request("/news/refresh", { method: "POST" }),
+
+  // Returns { Technology: 412, Sports: 339, ... }
+  getCategoryCounts: async () => {
+    const data = await request("/news/category-counts");
+    return data.counts || {};
+  },
 };
 
 // ─── SEARCH ───────────────────────────────────────────────────────────────────
@@ -188,7 +208,10 @@ export const searchAPI = {
     const q = new URLSearchParams(params).toString();
     const data = await request(`/search?${q}`);
     // returns { news, query, pagination }
-    return (data.news || []).map(normaliseArticle);
+    return {
+      articles: (data.news || []).map(normaliseArticle),
+      pagination: data.pagination || null,
+    };
   },
 
   getTrending: async () => {
@@ -285,7 +308,7 @@ sendMessage: async (sessionId, query) => {
 
     console.log("🚀 SENDING CLEAN TOKEN:", token.substring(0, 10) + "..."); 
 
-    const response = await axios.post("http://localhost:3000/api/news/chat", 
+    const response = await axios.post("http://localhost:5000/api/news/chat", 
       { query }, 
       { headers: { Authorization: `Bearer ${token}` } } // Space after Bearer is vital!
     );
@@ -311,8 +334,8 @@ export const compareAPI = {
       method: "POST",
       body: JSON.stringify({ item1, item2 }),
     });
-    // returns { comparison, message }
-    // comparison.results has the actual AI analysis
+    // Return the full comparison.results — this has ALL AI fields
+    // including socialImpact which is not stored in DB schema
     return data.comparison?.results || data.comparison || data;
   },
 
@@ -320,6 +343,7 @@ export const compareAPI = {
     const data = await request(`/compare/articles/${id1}/${id2}`, {
       method: "POST",
     });
+    // Same — return results directly, not the DB record
     // returns { comparison, message }
     return data.comparison?.results || data.comparison || data;
   },
@@ -399,6 +423,15 @@ export const timelineAPI = {
     return { story: data.story || null, message: data.message || "" };
   },
 
+  // Fetch timelines for a batch of saved article IDs in one request
+  getStoriesForSaved: async (articleIds) => {
+    const data = await request("/timeline/for-saved-articles", {
+      method: "POST",
+      body: JSON.stringify({ articleIds }),
+    });
+    return data.stories || [];
+  },
+
   // Req 1: record read/save activity for persistent history
   recordActivity: (action, article) =>
     request("/timeline/record-activity", {
@@ -408,6 +441,8 @@ export const timelineAPI = {
 };
 
 // ─── PERSPECTIVE ──────────────────────────────────────────────────────────────
+// POST /api/perspective  → { perspectives: [{id, label, text}] }
+// Note: emoji field has been removed; use persona icons in the UI instead.
 // POST /api/perspective  → { perspectives: [{id, label, emoji, text}] }
 export const perspectiveAPI = {
   generate: async ({ title, description, category }) => {

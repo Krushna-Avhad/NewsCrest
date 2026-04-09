@@ -11,23 +11,27 @@ export const searchNewsHandler = async (req, res) => {
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
 
-    if (!q) {
-      return res.status(400).json({ message: "Search query is required" });
+    // ✅ Allow category-only browsing — q is now optional
+    if (!q && !category) {
+      return res.status(400).json({ message: "Search query or category is required" });
     }
 
-    // Build search query
-    let query = {
-      $or: [
-        { title: { $regex: q, $options: 'i' } },
+    // Build search query — only add text search if q is provided
+    let query = {};
+
+    if (q) {
+      query.$or = [
+        { title:   { $regex: q, $options: 'i' } },
         { content: { $regex: q, $options: 'i' } },
         { summary: { $regex: q, $options: 'i' } },
-        { tags: { $in: [new RegExp(q, 'i')] } }
-      ]
-    };
+        { tags:    { $in: [new RegExp(q, 'i')] } }
+      ];
+    }
 
-    // Add filters
+    // Category filter — supports comma-separated values e.g. "World,India"
     if (category) {
-      query.category = category;
+      const cats = category.split(',').map(c => c.trim()).filter(Boolean);
+      query.category = cats.length === 1 ? cats[0] : { $in: cats };
     }
 
     if (source) {
@@ -37,16 +41,17 @@ export const searchNewsHandler = async (req, res) => {
     if (dateFrom || dateTo) {
       query.publishedAt = {};
       if (dateFrom) query.publishedAt.$gte = new Date(dateFrom);
-      if (dateTo) query.publishedAt.$lte = new Date(dateTo);
+      if (dateTo)   query.publishedAt.$lte = new Date(dateTo);
     }
 
-    // Add personalization if user is authenticated
-    if (req.user && req.user.interests && req.user.interests.length > 0) {
+    // Personalization — only apply when user has interests AND a search query
+    // Don't restrict category browsing by interests
+    if (q && req.user?.interests?.length > 0) {
       query.$and = query.$and || [];
       query.$and.push({
         $or: [
           { category: { $in: req.user.interests } },
-          { tags: { $in: req.user.interests } }
+          { tags:     { $in: req.user.interests } }
         ]
       });
     }
@@ -54,17 +59,11 @@ export const searchNewsHandler = async (req, res) => {
     // Sorting
     let sortOptions = {};
     switch (sortBy) {
-      case 'date':
-        sortOptions = { publishedAt: -1 };
-        break;
-      case 'popularity':
-        sortOptions = { 'engagement.shares': -1, 'engagement.comments': -1 };
-        break;
-      case 'trending':
-        sortOptions = { trending: -1, publishedAt: -1 };
-        break;
-      default: // relevance
-        sortOptions = { publishedAt: -1 };
+      case 'date':       sortOptions = { publishedAt: -1 }; break;
+      case 'popularity': sortOptions = { 'engagement.shares': -1, 'engagement.comments': -1 }; break;
+      case 'trending':   sortOptions = { trending: -1, publishedAt: -1 }; break;
+      case 'latest':     sortOptions = { publishedAt: -1 }; break;
+      default:           sortOptions = { publishedAt: -1 };
     }
 
     const news = await News.find(query)
@@ -77,7 +76,7 @@ export const searchNewsHandler = async (req, res) => {
 
     res.json({
       news,
-      query: q,
+      query: q || "",
       filters: { category, dateFrom, dateTo, source, sortBy },
       pagination: {
         page,

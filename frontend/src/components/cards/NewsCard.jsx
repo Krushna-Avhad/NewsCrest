@@ -123,6 +123,7 @@ function CardImage({ article }) {
   );
 }
 
+// NewsCard — no Compare button here; Compare lives only on the full ArticleDetailPage
 export function NewsCard({ article, onClick, showSave = true }) {
   const { toggleSaveArticle, isArticleSaved } = useApp();
   const saved = isArticleSaved(article?.id);
@@ -172,6 +173,7 @@ export function NewsCard({ article, onClick, showSave = true }) {
           )}
         </div>
       </div>
+
       {showSave && (
         <div className="px-4 py-2.5 border-t border-gold-subtle flex items-center gap-2">
           <button

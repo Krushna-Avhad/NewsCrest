@@ -1,5 +1,7 @@
 import axios from "axios";
 import News from "../models/News.js";
+import User from "../models/User.js";
+import { sendBulkNewsAlert } from "./emailService.js";
 
 // ── Sentiment Analysis (keyword-based, no API needed) ────────────────────────
 const POSITIVE_WORDS = [
@@ -49,7 +51,37 @@ function detectSentiment(title, content) {
   return "neutral";
 }
 
-// ── Newsdata.io response → internal article shape ────────────────────────────
+// ── Importance Detection ✅ ADDED ─────────────────────────────────────────────
+const BREAKING_KEYWORDS = [
+  "breaking", "urgent", "alert", "emergency", "critical", "just in",
+  "live update", "developing", "flash", "exclusive", "war", "earthquake",
+  "blast", "explosion", "terror", "attack", "killed", "dead", "crash",
+  "disaster", "crisis", "riot", "fire", "flood", "cyclone", "tsunami"
+];
+
+const HIGH_IMPORTANCE_KEYWORDS = [
+  "election", "pm modi", "president", "supreme court", "parliament",
+  "rbi", "budget", "policy", "gdp", "inflation", "recession",
+  "global", "worldwide", "national", "historic", "landmark", "record"
+];
+
+const HIGH_ENGAGEMENT_CATEGORIES = ["Politics", "India", "World", "Top Headlines", "Finance"];
+
+function detectImportance(title, content, category) {
+  const text = `${title || ""} ${content || ""}`.toLowerCase();
+
+  if (BREAKING_KEYWORDS.some(k => text.includes(k))) return "breaking";
+  if (HIGH_IMPORTANCE_KEYWORDS.some(k => text.includes(k))) return "high";
+  if (HIGH_ENGAGEMENT_CATEGORIES.includes(category)) return "high";
+  return "medium";
+}
+
+function shouldTriggerEmailAlert(importance, category) {
+  return importance === "breaking" ||
+    (importance === "high" && HIGH_ENGAGEMENT_CATEGORIES.includes(category));
+}
+
+// ── mapNewsdataArticle ────────────────────────────────────────────────────────
 function mapNewsdataArticle(article, categoryOverride) {
   const category = categoryOverride || mapCategory(article.category?.[0] || "top");
   return {
@@ -88,6 +120,13 @@ function mapCategory(category) {
   return map[(category || "").toLowerCase()] || "Top Headlines";
 }
 
+// ── Language code mapper ──────────────────────────────────────────────────────
+// Maps user.language (stored as full word in DB) → newsdata.io language code
+export function mapLanguageCode(lang) {
+  const map = { English: "en", Hindi: "hi", Marathi: "mr" };
+  return map[lang] || "en";
+}
+
 export const fetchAllCategories = async () => {
   const categoriesToFetch = [
     "top", "technology", "business", "sports", "fashion",
@@ -117,10 +156,11 @@ export const fetchNews = async (
   category = "top",
   country = "in",
   pageSize = 10,
+  language = "en",   // ← now accepts user language code
 ) => {
   try {
     const cat = category === "general" ? "top" : category;
-    const url = `https://newsdata.io/api/1/news?apikey=${process.env.NEWS_API_KEY}&country=${country}&category=${cat}&language=en`;
+    const url = `https://newsdata.io/api/1/news?apikey=${process.env.NEWS_API_KEY}&country=${country}&category=${cat}&language=${language}`;
     const response = await axios.get(url);
     const articles = response.data.results || [];
 
@@ -188,6 +228,8 @@ export const fetchCategoryNews = async (category) => {
 export const saveNewsToDatabase = async (articles) => {
   try {
     const savedNews = [];
+    const highPriorityArticles = []; // ✅ ADDED: collect for real-time email
+
     for (const article of articles) {
       if (!article.title || !article.url || article.title === "[Removed]")
         continue;
@@ -204,6 +246,9 @@ export const saveNewsToDatabase = async (articles) => {
       // Auto-detect sentiment from title + content
       const sentiment = detectSentiment(article.title, content);
 
+      // ✅ ADDED: Auto-detect importance from keywords + category
+      const importance = detectImportance(article.title, content, article.category);
+
       try {
         const newsItem = await News.create({
           ...article,
@@ -211,21 +256,75 @@ export const saveNewsToDatabase = async (articles) => {
           summary: article.summary || article.description || "",
           publishedAt: new Date(article.publishedAt || Date.now()),
           readTime: Math.ceil(content.length / 1000) || 3,
-          trending: false,
-          importance: "medium",
+          trending: importance === "breaking",  // breaking → auto trending
+          importance,
           sentiment,
         });
         savedNews.push(newsItem);
+
+        // ✅ ADDED: collect high-priority for real-time email trigger
+        if (shouldTriggerEmailAlert(importance, newsItem.category)) {
+          highPriorityArticles.push(newsItem);
+        }
       } catch (err) {
         console.warn(`  Skipped article: ${err.message}`);
       }
     }
+
+    // ✅ ADDED: Real-time email alert for high-priority/breaking articles
+    if (highPriorityArticles.length > 0) {
+      triggerRealTimeEmailAlerts(highPriorityArticles).catch(err =>
+        console.warn("⚠️  Real-time email trigger error:", err.message)
+      );
+    }
+
     return savedNews;
   } catch (error) {
     console.error("Error saving news to database:", error.message);
     return [];
   }
 };
+
+// ✅ ADDED: Real-time email alert when breaking/high-importance article is saved
+// Finds all users with emailAlerts ON and sends bulk email — fire-and-forget
+async function triggerRealTimeEmailAlerts(articles) {
+  try {
+    // Only process the first/most important article to avoid flooding
+    const article = articles[0];
+    if (!article) return;
+
+    // Find users who want email alerts
+    const users = await User.find({
+      "notificationPreferences.emailAlerts": true,
+      isActive: true,
+      $or: [{ isVerified: true }, { isVerified: { $exists: false } }],
+    }).select("email notificationPreferences interests");
+
+    // Filter: breaking → all email-alert users; high → only interested users
+    const targetUsers = article.importance === "breaking"
+      ? users.filter(u => u.notificationPreferences?.breakingNews !== false)
+      : users.filter(u =>
+          u.notificationPreferences?.personalizedAlerts !== false &&
+          (!u.interests?.length || u.interests.includes(article.category))
+        );
+
+    if (!targetUsers.length) return;
+
+    const emails = targetUsers.map(u => u.email);
+    const label = article.importance === "breaking" ? "🚨 Breaking News" : `📰 ${article.category}`;
+
+    console.log(`📧 Real-time email alert → ${emails.length} users for: "${article.title}"`);
+
+    await sendBulkNewsAlert(emails, {
+      title: article.title,
+      description: article.summary || article.content?.substring(0, 200) || "",
+      link: article.url,
+      category: label,
+    });
+  } catch (err) {
+    console.warn("triggerRealTimeEmailAlerts error:", err.message);
+  }
+}
 
 // ✅ GET LOCAL NEWS BASED ON USER LOCATION
 export const getLocalNews = async (city, state) => {

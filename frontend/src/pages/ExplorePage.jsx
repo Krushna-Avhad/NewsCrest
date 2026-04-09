@@ -24,7 +24,7 @@ const TAB_CATEGORIES = {
 };
 
 export default function ExplorePage() {
-  const { openArticle, feedArticles, headlines, trendingArticles } = useApp();
+  const { openArticle, feedArticles, headlines, trendingArticles, allArticles, allArticlesLoading, newsPagination, loadMoreArticles } = useApp();
   const [activeTab, setActiveTab] = useState("All");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
@@ -32,10 +32,11 @@ export default function ExplorePage() {
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
 
-  // Base articles when no search
-  const baseArticles = [...(headlines || []), ...(feedArticles || [])].filter(
-    (a, i, arr) => arr.findIndex((x) => x.id === a.id) === i,
-  );
+  // ✅ Use allArticles (up to 50+) as base, fall back to headlines+feed
+  const baseArticles = (allArticles?.length > 0
+    ? allArticles
+    : [...(headlines || []), ...(feedArticles || [])]
+  ).filter((a, i, arr) => arr.findIndex((x) => x.id === a.id) === i);
 
   // Load trending topics on mount
   useEffect(() => {
@@ -48,47 +49,80 @@ export default function ExplorePage() {
   const doSearch = useCallback(
     async (q, tab) => {
       const trimmed = q.trim();
+
+      // "All" tab with no query — just show baseArticles, no API call needed
+      if (tab === "All" && !trimmed) {
+        setResults([]);
+        setSearched(false);
+        setLoading(false);
+        return;
+      }
+
       setLoading(true);
       setSearched(true);
-      try {
-        const params = {};
-        if (trimmed) params.q = trimmed;
-        if (tab && TAB_CATEGORIES[tab]) params.category = TAB_CATEGORIES[tab];
 
+      try {
         let articles = [];
+
         if (tab === "Trending") {
+          // Use trendingArticles from context — already loaded
           articles = trendingArticles || [];
-        } else if (trimmed || (tab && TAB_CATEGORIES[tab])) {
-          const data = await searchAPI.search(params);
-          articles = data.articles || [];
+
         } else if (tab === "Latest") {
-          const data = await newsAPI.getAll({ sortBy: "latest", page: 1 });
+          // Latest = all news sorted by date, no text filter
+          const data = await newsAPI.getAll({ page: 1, limit: 50 });
           articles = data.articles || [];
+
         } else {
-          articles = baseArticles;
-          setSearched(false);
+          // All other tabs (All + query, World, India, Local) → hit search endpoint
+          const params = {};
+          if (trimmed) params.q = trimmed;
+
+          // Map tab name to the exact category string your DB uses
+          const tabCategoryMap = {
+            World: "World",
+            India: "India",
+            Local: "Local",
+          };
+          if (tabCategoryMap[tab]) params.category = tabCategoryMap[tab];
+
+          const data = await searchAPI.search(params);
+          articles = data.articles || []; // ✅ now reads correctly from {articles, pagination}
         }
+
         setResults(articles);
       } catch (_) {
         setResults([]);
       }
+
       setLoading(false);
     },
     [trendingArticles, baseArticles],
   );
 
   // React to tab changes
-  useEffect(() => {
-    if (activeTab === "All" && !query.trim()) {
-      setResults([]);
-      setSearched(false);
-      setLoading(false);
-    } else {
-      doSearch(query, activeTab);
-    }
-  }, [activeTab]);
+useEffect(() => {
+  if (!query.trim() && activeTab === "All") {
+    setResults([]);
+    setSearched(false);
+    setLoading(false);
+    return;
+  }
 
-  const handleSearch = () => doSearch(query, activeTab);
+  doSearch(query, activeTab);
+}, [activeTab]); // runs only when tab changes
+
+const handleSearch = () => {
+  if (!query.trim()) {
+    // Empty search = clear results and go back to browsing
+    setResults([]);
+    setSearched(false);
+    setLoading(false);
+    return;
+  }
+
+  doSearch(query, activeTab);
+};
 
   const handleTrendingClick = (topic) => {
     setQuery(
@@ -101,6 +135,13 @@ export default function ExplorePage() {
     );
   };
 
+  // When searched/tab active → use API results
+  // When on "All" with no query → use baseArticles directly
+
+
+  // Client-side filter only for live typing before user hits Search
+  // Once searched=true we trust the API results completely
+
   const displayArticles =
     searched || query.trim()
       ? results
@@ -110,7 +151,7 @@ export default function ExplorePage() {
           return a.category?.toLowerCase().includes(activeTab.toLowerCase());
         });
 
-  const filteredByQuery = query.trim()
+  const filteredByQuery = !searched && query.trim()
     ? displayArticles.filter(
         (a) =>
           a.title?.toLowerCase().includes(query.toLowerCase()) ||
@@ -218,13 +259,27 @@ export default function ExplorePage() {
           </div>
 
           {filteredByQuery.length > 0 ? (
-            <div className="grid grid-cols-3 gap-5">
-              {filteredByQuery.map((a) => (
-                <div key={a.id} className="card-reveal">
-                  <NewsCard article={a} onClick={openArticle} />
+            <>
+              <div className="grid grid-cols-3 gap-5">
+                {filteredByQuery.map((a) => (
+                  <div key={a.id} className="card-reveal">
+                    <NewsCard article={a} onClick={openArticle} />
+                  </div>
+                ))}
+              </div>
+              {/* Load more — only show when not searching and more pages exist */}
+              {!query.trim() && newsPagination?.hasNext && (
+                <div className="flex justify-center mt-8">
+                  <button
+                    onClick={loadMoreArticles}
+                    disabled={allArticlesLoading}
+                    className="px-6 py-2.5 rounded-[12px] border border-gold/40 bg-white text-maroon text-[13px] font-semibold hover:bg-lemon hover:border-gold transition-all duration-200 disabled:opacity-50"
+                  >
+                    {allArticlesLoading ? "Loading..." : `Load More · ${newsPagination.total - filteredByQuery.length} remaining`}
+                  </button>
                 </div>
-              ))}
-            </div>
+              )}
+            </>
           ) : (
             <div className="text-center py-16 bg-white rounded-card border border-gold-subtle fade-in">
               <div className="w-16 h-16 rounded-full bg-smoke flex items-center justify-center mx-auto mb-4">
