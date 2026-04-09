@@ -187,13 +187,18 @@ export const generateFromInput = async (req, res) => {
 };
 
 // ── GET /api/timeline/all-articles ───────────────────────────────────────────
-// Returns ALL articles from the News DB for the "Select Article" dropdown.
-// Sorted newest first, limited to 100 for performance.
+// Returns ALL articles from the News DB for dropdowns.
+// Supports ?search=keyword to filter by title (case-insensitive).
+// No hard limit — returns everything so dropdowns are complete.
 export const getAllArticlesForDropdown = async (req, res) => {
   try {
-    const articles = await News.find({})
+    const { search } = req.query;
+    const query = search
+      ? { title: { $regex: search, $options: "i" } }
+      : {};
+
+    const articles = await News.find(query)
       .sort({ publishedAt: -1 })
-      .limit(100)
       .select("title summary category source publishedAt imageUrl url");
 
     const items = articles.map(a => ({

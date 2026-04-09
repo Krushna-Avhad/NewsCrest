@@ -440,7 +440,9 @@ export async function getTimelineForArticle(articleId) {
 
   if (byId) return byId;
 
-  // 2. Fallback: look up the article and try matching by keywords/entities
+  // 2. Strict fallback: must match BOTH same category AND all top 3 keywords.
+  // The old "$in: titleWords.slice(0,4)" matched any 1 word out of 4 which
+  // returned completely unrelated timelines. "$all" requires every word to match.
   try {
     const article = await News.findById(articleId).select("title category tags");
     if (!article) return null;
@@ -449,14 +451,16 @@ export async function getTimelineForArticle(articleId) {
       .toLowerCase()
       .replace(/[^a-z0-9\s]/g, " ")
       .split(/\s+/)
-      .filter((w) => w.length > 3);
+      .filter((w) => w.length > 4 && !STOP_WORDS.has(w));
 
-    if (!titleWords.length) return null;
+    // Need at least 3 meaningful words for a reliable match
+    if (titleWords.length < 3) return null;
 
     const byKeywords = await StoryTimeline.findOne({
       isActive: true,
+      category: article.category,              // must be same category
       $expr: { $gt: [{ $size: "$articles" }, 1] },
-      keywords: { $in: titleWords.slice(0, 4) },
+      keywords: { $all: titleWords.slice(0, 3) }, // must match ALL top 3 words
     }).populate({ path: "articles.articleId", model: "News", select: "title summary imageUrl category source publishedAt url readTime" });
 
     return byKeywords || null;

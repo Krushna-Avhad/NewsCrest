@@ -330,6 +330,139 @@ function StoryListItem({ story, onClick, onDelete }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// ARTICLE DROPDOWN — shared component with arrow toggle, no category labels
+// ─────────────────────────────────────────────────────────────────────────────
+function ArticleDropdown({ allArticles, articlesLoading, selectedArticle, onSelect, placeholder }) {
+  const [open, setOpen]         = useState(false);
+  const [query, setQuery]       = useState("");
+  const [dropPos, setDropPos]   = useState({ top: 0, left: 0, width: 0 });
+  const containerRef            = useRef(null);
+  const inputRef                = useRef(null);
+
+  // Close on outside click — only active when open
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => {
+      const portal = document.getElementById("article-dropdown-portal");
+      if (
+        (containerRef.current && containerRef.current.contains(e.target)) ||
+        (portal && portal.contains(e.target))
+      ) return;
+      setOpen(false);
+      setQuery("");
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const filtered = query.trim()
+    ? allArticles.filter(a => a.title?.toLowerCase().includes(query.toLowerCase()))
+    : allArticles;
+
+  // Calculate position SYNCHRONOUSLY at click — no useEffect lag or scroll jitter
+  const handleToggle = () => {
+    if (!open && containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      setDropPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+    }
+    setOpen(v => !v);
+    setQuery("");
+  };
+
+  const handleSelect = (item) => {
+    onSelect(item);
+    setOpen(false);
+    setQuery("");
+  };
+
+  return (
+    <>
+      <div ref={containerRef} className="relative">
+        {/* Trigger button */}
+        <button
+          type="button"
+          onClick={handleToggle}
+          className="w-full flex items-center justify-between gap-2 px-3.5 py-2.5 border-[1.5px] border-gold/30 rounded-[10px] bg-smoke text-[13px] transition-all duration-200 hover:border-gold focus:outline-none cursor-pointer"
+          style={{ minHeight: 42 }}
+        >
+          <span className={`flex-1 text-left line-clamp-1 ${selectedArticle ? "text-text-primary font-medium" : "text-text-muted"}`}>
+            {selectedArticle ? selectedArticle.title : (placeholder || "Select an article…")}
+          </span>
+          <svg
+            width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+            strokeLinecap="round" strokeLinejoin="round"
+            className={`flex-shrink-0 text-text-muted transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+          >
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
+        </button>
+      </div>
+
+      {/* Fixed-position dropdown portal — escapes all overflow:hidden parents */}
+      {open && (
+        <div
+          id="article-dropdown-portal"
+          style={{ position: "fixed", top: dropPos.top, left: dropPos.left, width: dropPos.width, zIndex: 9999 }}
+          className="bg-white border border-gold/30 rounded-[12px] shadow-2xl overflow-hidden"
+        >
+          {/* Search input */}
+          <div className="p-2 border-b border-gold/15">
+            <div className="relative">
+              <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+              <input
+                ref={inputRef}
+                type="text"
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                placeholder="Search articles…"
+                className="w-full pl-7 pr-3 py-1.5 text-[12.5px] bg-smoke rounded-[8px] outline-none border border-transparent focus:border-gold/30 placeholder:text-text-muted text-text-primary"
+              />
+              {articlesLoading && (
+                <svg className="absolute right-2.5 top-1/2 -translate-y-1/2 animate-spin text-text-muted" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+                </svg>
+              )}
+            </div>
+          </div>
+
+          {/* Article list */}
+          <div className="max-h-[260px] overflow-y-auto">
+            {filtered.length === 0 ? (
+              <p className="text-[12px] text-text-muted text-center py-4">
+                {query ? "No articles match your search" : articlesLoading ? "Loading…" : "No articles available"}
+              </p>
+            ) : (
+              filtered.map(item => (
+                <button
+                  key={item.articleId}
+                  type="button"
+                  onMouseDown={e => e.preventDefault()} // prevent blur before click
+                  onClick={() => handleSelect(item)}
+                  className={`w-full text-left px-3.5 py-2.5 text-[12.5px] border-b border-gold/10 last:border-0 transition-colors duration-100 cursor-pointer leading-[1.4] ${
+                    selectedArticle?.articleId?.toString() === item.articleId?.toString()
+                      ? "bg-lemon text-text-primary font-semibold"
+                      : "text-text-primary hover:bg-smoke"
+                  }`}
+                >
+                  {item.title}
+                </button>
+              ))
+            )}
+          </div>
+          {filtered.length > 0 && (
+            <div className="px-3 py-1.5 border-t border-gold/10 bg-smoke/40">
+              <p className="text-[10px] text-text-muted">{filtered.length} article{filtered.length !== 1 ? "s" : ""}{query ? " found" : " available"}</p>
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // GENERATE TIMELINE PANEL  (Req 4A — manual input + Req 3 — all articles dropdown)
 // ─────────────────────────────────────────────────────────────────────────────
 function GeneratePanel({ onStoryGenerated, user }) {
@@ -338,18 +471,18 @@ function GeneratePanel({ onStoryGenerated, user }) {
   const [generating, setGenerating]       = useState(false);
   const [errorMsg, setErrorMsg]           = useState("");
 
-  // "Select Article" dropdown state
-  const [allArticles, setAllArticles]       = useState([]);
+  // "Select Article" state
+  const [allArticles, setAllArticles]         = useState([]);
   const [articlesLoading, setArticlesLoading] = useState(false);
-  const [selectedArticleId, setSelectedArticleId] = useState("");
+  const [selectedArticle, setSelectedArticle] = useState(null);
 
   const textareaRef = useRef(null);
 
-  // Load ALL articles when dropdown mode opens
+  // Load all articles when mode opens
   useEffect(() => {
     if (mode === "select" && allArticles.length === 0) {
       setArticlesLoading(true);
-      timelineAPI.getAllArticles()
+      timelineAPI.getAllArticles("")
         .then(items => setAllArticles(items))
         .catch(() => setAllArticles([]))
         .finally(() => setArticlesLoading(false));
@@ -376,16 +509,14 @@ function GeneratePanel({ onStoryGenerated, user }) {
 
   // ── B: Select article → generate ──────────────────────────────────────────
   const handleSelectGenerate = async () => {
-    if (!selectedArticleId) return;
-    const article = allArticles.find(a => a.articleId?.toString() === selectedArticleId);
-    if (!article) return;
+    if (!selectedArticle) return;
     setGenerating(true);
     setErrorMsg("");
     try {
       const { story, message } = await timelineAPI.generateFromHistory({
-        articleId:   article.articleId,
-        title:       article.title,
-        description: article.description,
+        articleId:   selectedArticle.articleId,
+        title:       selectedArticle.title,
+        description: selectedArticle.description,
       });
       if (story && story.articles?.length > 0) {
         onStoryGenerated(story);
@@ -398,10 +529,8 @@ function GeneratePanel({ onStoryGenerated, user }) {
     setGenerating(false);
   };
 
-  const selectedArticle = allArticles.find(a => a.articleId?.toString() === selectedArticleId);
-
   return (
-    <div className="bg-white rounded-card border border-gold-subtle shadow-card overflow-hidden mb-5">
+    <div className="bg-white rounded-card border border-gold-subtle shadow-card mb-5">
       {/* Panel header */}
       <div className="bg-gradient-to-r from-lemon to-white px-5 py-3.5 border-b border-gold/20">
         <div className="flex items-center gap-2 mb-0.5">
@@ -475,91 +604,67 @@ function GeneratePanel({ onStoryGenerated, user }) {
           </>
         )}
 
-        {/* ── MODE B: Select Article (all DB articles) ── */}
+        {/* ── MODE B: Select Article — dropdown with arrow ── */}
         {mode === "select" && (
           <>
-            {articlesLoading ? (
-              <div className="space-y-2">
-                {[1,2,3].map(i => <div key={i} className="h-10 bg-smoke rounded-[10px] animate-pulse" />)}
-              </div>
-            ) : allArticles.length === 0 ? (
-              <p className="text-[13px] text-text-muted text-center py-4">
-                No articles found in the database.
-              </p>
-            ) : (
-              <>
-                <label className="text-[11px] font-bold uppercase tracking-[1px] text-text-muted mb-1.5 block">
-                  Select Article ({allArticles.length} available)
-                </label>
+            <p className="text-[11px] text-text-muted mb-2">
+              {allArticles.length > 0 ? `${allArticles.length} articles available` : articlesLoading ? "Loading articles…" : "No articles found"}
+            </p>
 
-                <div className="relative mb-3">
-                  <select
-                    value={selectedArticleId}
-                    onChange={e => setSelectedArticleId(e.target.value)}
-                    className="w-full px-3.5 py-2.5 pr-9 border-[1.5px] border-gold/25 rounded-[10px] text-[13px] text-text-primary bg-smoke outline-none focus:border-gold appearance-none cursor-pointer"
-                    size={1}
-                  >
-                    <option value="">— Choose an article —</option>
-                    {allArticles.map(item => (
-                      <option key={item.articleId} value={item.articleId?.toString()}>
-                        {item.category ? `[${item.category}] ` : ""}
-                        {item.title?.slice(0, 75)}{item.title?.length > 75 ? "…" : ""}
-                      </option>
-                    ))}
-                  </select>
-                  <svg className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-text-muted" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <polyline points="6 9 12 15 18 9"/>
-                  </svg>
-                </div>
+            <ArticleDropdown
+              allArticles={allArticles}
+              articlesLoading={articlesLoading}
+              selectedArticle={selectedArticle}
+              onSelect={setSelectedArticle}
+              placeholder="Select an article to build its timeline…"
+            />
 
-                {/* Preview selected article */}
-                {selectedArticle && (
-                  <div className="bg-lemon rounded-[10px] border border-gold/25 p-3 mb-3">
-                    <div className="flex items-center gap-2 mb-1">
-                      {selectedArticle.category && (
-                        <span className="text-[9px] font-bold uppercase text-maroon tracking-[0.5px]">
-                          {selectedArticle.category}
-                        </span>
-                      )}
-                      <span className="text-[10px] text-text-muted">
-                        · {timeAgo(selectedArticle.publishedAt)}
-                      </span>
-                      {selectedArticle.source && (
-                        <span className="text-[10px] text-text-muted">· {selectedArticle.source}</span>
-                      )}
-                    </div>
-                    <p className="text-[12.5px] font-semibold text-text-primary line-clamp-2 mb-0.5">
-                      {selectedArticle.title}
-                    </p>
-                    {selectedArticle.description && (
-                      <p className="text-[11px] text-text-secondary line-clamp-1">{selectedArticle.description}</p>
-                    )}
-                  </div>
-                )}
-
-                <button
-                  onClick={handleSelectGenerate}
-                  disabled={!selectedArticleId || generating}
-                  className="w-full flex items-center justify-center gap-2 py-2.5 bg-maroon text-white text-[12px] font-bold rounded-[10px] hover:bg-maroon-dark disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200 cursor-pointer"
-                >
-                  {generating ? (
-                    <>
-                      <svg className="animate-spin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
-                      </svg>
-                      Building Timeline…
-                    </>
-                  ) : (
-                    <>
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-                      </svg>
-                      Build Timeline for This Article
-                    </>
+            {/* Preview selected article */}
+            {selectedArticle && (
+              <div className="bg-lemon rounded-[10px] border border-gold/25 p-3 mt-3 mb-3">
+                <div className="flex items-center gap-2 mb-1">
+                  {selectedArticle.category && (
+                    <span className="text-[9px] font-bold uppercase text-maroon tracking-[0.5px]">
+                      {selectedArticle.category}
+                    </span>
                   )}
-                </button>
-              </>
+                  <span className="text-[10px] text-text-muted">
+                    · {timeAgo(selectedArticle.publishedAt)}
+                  </span>
+                  {selectedArticle.source && (
+                    <span className="text-[10px] text-text-muted">· {selectedArticle.source}</span>
+                  )}
+                </div>
+                <p className="text-[12.5px] font-semibold text-text-primary line-clamp-2 mb-0.5">
+                  {selectedArticle.title}
+                </p>
+                {selectedArticle.description && (
+                  <p className="text-[11px] text-text-secondary line-clamp-1">{selectedArticle.description}</p>
+                )}
+              </div>
             )}
+
+            <button
+              onClick={handleSelectGenerate}
+              disabled={!selectedArticle || generating}
+              className="w-full flex items-center justify-center gap-2 py-2.5 bg-maroon text-white text-[12px] font-bold rounded-[10px] hover:bg-maroon-dark disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200 cursor-pointer mt-3"
+            >
+              {generating ? (
+                <>
+                  <svg className="animate-spin" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+                  </svg>
+                  Building Timeline…
+                </>
+              ) : (
+                <>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                  </svg>
+                  Build Timeline for This Article
+                </>
+              )}
+            </button>
           </>
         )}
 
@@ -755,83 +860,36 @@ export default function StoryTimelinePage() {
         </div>
       )}
 
-      {/* Section header — no tabs, just "Continue This Story" */}
-<div className="flex items-center justify-between mb-4">
-  <div>
-    <h3 className="font-playfair text-[19px] font-bold text-text-primary">
-      Continue This Story
-    </h3>
-    <p className="text-[12.5px] text-text-muted mt-0.5">
-      {user
-        ? "Threads based on your reading activity"
-        : "Sign in to see your personalised story threads"}
-    </p>
-  </div>
+      {/* Story list */}
+      {loading && user ? (
+        <SkeletonList />
+      ) : (() => {
+        if (!user) return null;
+        const myIds = new Set(myStories.map(s => s._id?.toString()));
+        const uniqueSaved = savedStories.filter(s => !myIds.has(s._id?.toString()));
+        if (myStories.length === 0 && uniqueSaved.length === 0) return null;
+        return (
+          <div className="space-y-3">
+            {myStories.length > 0 && (
+              <>
+                <p className="text-[11px] font-bold uppercase tracking-[1.5px] text-text-muted px-1 pt-1">From your reading history</p>
+                {myStories.map((story, i) => (
+                  <StoryListItem key={story._id || i} story={story} onClick={handleOpenStory} onDelete={handleDeleteStory} />
+                ))}
+              </>
+            )}
+            {uniqueSaved.length > 0 && (
+              <>
+                <p className="text-[11px] font-bold uppercase tracking-[1.5px] text-text-muted px-1 pt-2">From your saved articles</p>
+                {uniqueSaved.map((story, i) => (
+                  <StoryListItem key={story._id || i} story={story} onClick={handleOpenStory} onDelete={handleDeleteStory} />
+                ))}
+              </>
+            )}
+          </div>
+        );
+      })()}
 
-  {(() => {
-    const myIds = new Set(myStories.map(s => s._id?.toString()));
-    const uniqueSaved = savedStories.filter(
-      s => !myIds.has(s._id?.toString())
-    );
-    const total = myStories.length + uniqueSaved.length;
-
-    return total > 0 ? (
-      <span className="text-[11px] text-text-muted">
-        {total} active threads
-      </span>
-    ) : null;
-  })()}
-</div>
-
-{/* Story list */}
-{loading && user ? (
-  <SkeletonList />
-) : (() => {
-    const myIds = new Set(myStories.map(s => s._id?.toString()));
-    const uniqueSaved = savedStories.filter(
-      s => !myIds.has(s._id?.toString())
-    );
-
-    if (myStories.length === 0 && uniqueSaved.length === 0) return null;
-
-    return (
-      <div className="space-y-3">
-        {/* My Stories */}
-        {myStories.length > 0 && (
-          <>
-            <p className="text-[11px] font-bold uppercase tracking-[1.5px] text-text-muted px-1 pt-1">
-              From your reading history
-            </p>
-            {myStories.map((story, i) => (
-              <StoryListItem
-                key={story._id || i}
-                story={story}
-                onClick={handleOpenStory}
-                onDelete={handleDeleteStory}
-              />
-            ))}
-          </>
-        )}
-
-        {/* Saved Stories */}
-        {uniqueSaved.length > 0 && (
-          <>
-            <p className="text-[11px] font-bold uppercase tracking-[1.5px] text-text-muted px-1 pt-2">
-              From your saved articles
-            </p>
-            {uniqueSaved.map((story, i) => (
-              <StoryListItem
-                key={story._id || i}
-                story={story}
-                onClick={handleOpenStory}
-                onDelete={handleDeleteStory}
-              />
-            ))}
-          </>
-        )}
-      </div>
-    );
-  })()}
     </AppShell>
   );
 }
