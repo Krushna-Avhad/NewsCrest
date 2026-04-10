@@ -1,4 +1,6 @@
 // src/App.jsx
+import ForgotPassword from "./pages/ForgotPassword";
+import VerifyOtp from "./pages/VerifyOtp";
 import { AppProvider, useApp } from "./context/AppContext";
 import LandingPage from "./pages/LandingPage";
 import LoginPage from "./pages/LoginPage";
@@ -42,6 +44,8 @@ const PAGE_MAP = {
   login: LoginPage,
   signup: SignupPage,
   otp: OtpPage,
+    "forgot-password": ForgotPassword,
+  "verify-otp": VerifyOtp,
   dashboard: DashboardPage,
   explore: ExplorePage,
   categories: CategoriesPage,
