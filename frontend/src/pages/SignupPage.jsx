@@ -12,6 +12,7 @@ import {
   BellIcon,
   DiamondIcon,
 } from "../components/ui/Icons";
+import { indiaStatesCities } from "../data/indialocations";
 
 const PROFILE_TYPES = [
   "Student",
@@ -63,7 +64,8 @@ const STEP_CONTENT = [
 export default function SignupPage() {
   const { setPage, signup, authLoading, authError } = useApp();
   const [step, setStep] = useState(1);
-
+const [selectedState, setSelectedState] = useState("");
+const [selectedCity, setSelectedCity] = useState("");
   // Form state
   const [showPassword, setShowPassword] = useState(false);
 const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -72,8 +74,8 @@ const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [profileType, setProfileType] = useState([]);
-  const [city, setCity] = useState("");
-  const [state, setState] = useState("");
+  // const [city, setCity] = useState("");
+  // const [state, setState] = useState("");
   const [selectedInterests, setSelectedInterests] = useState([
     "Technology",
     "AI",
@@ -123,8 +125,8 @@ const [showConfirmPassword, setShowConfirmPassword] = useState(false);
       password,
       profileType,
       interests: selectedInterests,
-      city,
-      state,
+      city: selectedCity,
+      state: selectedState,
       notificationPreferences: notifPrefs,
     });
   };
@@ -446,39 +448,54 @@ const toggleProfileType = (p) => {
                   </button>
                 ))}
               </div>
-              <div className="grid grid-cols-2 gap-3 mb-5">
-                <div>
-                  <label className="block text-[12px] font-semibold text-text-secondary mb-1.5">
-                    City
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="First Enter State, then City"
-                    value={city}
-                    onChange={(e) => {
-  if (!state) {
-    alert("Please select state first");
-    return;
-  }
-  setCity(e.target.value);
-}}
-                    disabled={!state}
-                    className="w-full px-4 py-[11px] border-[1.5px] border-gold/25 rounded-[12px] font-inter text-[14px] text-text-primary bg-white outline-none transition-all duration-200 focus:border-gold focus:shadow-[0_0_0_3px_rgba(218,165,32,0.12)]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[12px] font-semibold text-text-secondary mb-1.5">
-                    State
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Maharashtra"
-                    value={state}
-                    onChange={(e) => setState(e.target.value)}
-                    className="w-full px-4 py-[11px] border-[1.5px] border-gold/25 rounded-[12px] font-inter text-[14px] text-text-primary bg-white outline-none transition-all duration-200 focus:border-gold focus:shadow-[0_0_0_3px_rgba(218,165,32,0.12)]"
-                  />
-                </div>
-              </div>
+              <div className="grid grid-cols-2 gap-4 mb-6">
+  {/* City */}
+  <div>
+    <label className="block text-xs font-semibold text-gray-500 mb-1.5">
+      City
+    </label>
+    <select
+      value={selectedCity}
+      onChange={(e) => setSelectedCity(e.target.value)}
+      disabled={!selectedState}
+      className="w-full px-3 py-2 rounded-md bg-gray-100 text-gray-700 text-sm 
+                 border border-gray-200 focus:outline-none focus:ring-2 
+                 focus:ring-maroon/60 disabled:opacity-60 disabled:cursor-not-allowed"
+    >
+      <option value="">Select City</option>
+      {selectedState &&
+        indiaStatesCities[selectedState].map((city) => (
+          <option key={city} value={city}>
+            {city}
+          </option>
+        ))}
+    </select>
+  </div>
+
+  {/* State */}
+  <div>
+    <label className="block text-xs font-semibold text-gray-500 mb-1.5">
+      State
+    </label>
+    <select
+      value={selectedState}
+      onChange={(e) => {
+        setSelectedState(e.target.value);
+        setSelectedCity("");
+      }}
+      className="w-full px-3 py-2 rounded-md bg-gray-100 text-gray-700 text-sm 
+                 border border-gray-200 focus:outline-none focus:ring-2 
+                 focus:ring-maroon/60"
+    >
+      <option value="">Select State</option>
+      {Object.keys(indiaStatesCities).map((state) => (
+        <option key={state} value={state}>
+          {state}
+        </option>
+      ))}
+    </select>
+  </div>
+</div>
               <div className="flex gap-3">
                 <Button
                   variant="secondary"
