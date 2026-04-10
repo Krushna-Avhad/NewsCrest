@@ -11,10 +11,7 @@ export const searchNewsHandler = async (req, res) => {
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
 
-    // ✅ Allow category-only browsing — q is now optional
-    if (!q && !category) {
-      return res.status(400).json({ message: "Search query or category is required" });
-    }
+    // q and category are both optional — an empty query returns all news paginated
 
     // Build search query — only add text search if q is provided
     let query = {};
@@ -42,18 +39,6 @@ export const searchNewsHandler = async (req, res) => {
       query.publishedAt = {};
       if (dateFrom) query.publishedAt.$gte = new Date(dateFrom);
       if (dateTo)   query.publishedAt.$lte = new Date(dateTo);
-    }
-
-    // Personalization — only apply when user has interests AND a search query
-    // Don't restrict category browsing by interests
-    if (q && req.user?.interests?.length > 0) {
-      query.$and = query.$and || [];
-      query.$and.push({
-        $or: [
-          { category: { $in: req.user.interests } },
-          { tags:     { $in: req.user.interests } }
-        ]
-      });
     }
 
     // Sorting
