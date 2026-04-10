@@ -188,18 +188,3 @@
 .stat-appear {
   animation: statAppear 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
-
-/* ── Global Text Size (controlled via nc-text-* class on root wrapper) ──────── */
-/* These scale body text only — headings use font-size explicitly via Tailwind   */
-.nc-text-small  { font-size: 13px; }
-.nc-text-medium { font-size: 15px; }
-.nc-text-large  { font-size: 17px; }
-
-.nc-text-small  p, .nc-text-small  span, .nc-text-small  li,
-.nc-text-small  .text-body, .nc-text-small  div[class*="text-[13"] { font-size: 13px; }
-
-.nc-text-medium p, .nc-text-medium span, .nc-text-medium li,
-.nc-text-medium .text-body, .nc-text-medium div[class*="text-[14"] { font-size: 15px; }
-
-.nc-text-large  p, .nc-text-large  span, .nc-text-large  li,
-.nc-text-large  .text-body, .nc-text-large  div[class*="text-[14"] { font-size: 17px; }

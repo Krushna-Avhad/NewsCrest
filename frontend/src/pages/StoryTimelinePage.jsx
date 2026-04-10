@@ -177,6 +177,8 @@ function StoryDetailPanel({ story, onBack, onArticleClick, userReadIds }) {
             {story.title}
           </h2>
         </div>
+
+
       </div>
 
       {/* Keywords */}
@@ -219,7 +221,7 @@ function StoryListItem({ story, onClick, onDelete }) {
   const newCount = story.newArticlesCount || 0;
 
   const handleDelete = (e) => {
-    e.stopPropagation();
+    e.stopPropagation(); // prevent card click
     onDelete(story._id);
   };
 
@@ -285,6 +287,7 @@ function StoryListItem({ story, onClick, onDelete }) {
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-text-muted group-hover:text-maroon transition-colors duration-200">
             <polyline points="9 18 15 12 9 6"/>
           </svg>
+          {/* Delete button */}
           <button
             onClick={handleDelete}
             title="Remove from timeline"
@@ -304,15 +307,16 @@ function StoryListItem({ story, onClick, onDelete }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ARTICLE DROPDOWN
+// ARTICLE DROPDOWN — shared component with arrow toggle, no category labels
 // ─────────────────────────────────────────────────────────────────────────────
 function ArticleDropdown({ allArticles, articlesLoading, selectedArticle, onSelect, placeholder }) {
-  const [open, setOpen]       = useState(false);
-  const [query, setQuery]     = useState("");
-  const [dropPos, setDropPos] = useState({ top: 0, left: 0, width: 0 });
-  const containerRef          = useRef(null);
-  const inputRef              = useRef(null);
+  const [open, setOpen]         = useState(false);
+  const [query, setQuery]       = useState("");
+  const [dropPos, setDropPos]   = useState({ top: 0, left: 0, width: 0 });
+  const containerRef            = useRef(null);
+  const inputRef                = useRef(null);
 
+  // Close on outside click — only active when open
   useEffect(() => {
     if (!open) return;
     const handler = (e) => {
@@ -332,6 +336,7 @@ function ArticleDropdown({ allArticles, articlesLoading, selectedArticle, onSele
     ? allArticles.filter(a => a.title?.toLowerCase().includes(query.toLowerCase()))
     : allArticles;
 
+  // Calculate position SYNCHRONOUSLY at click — no useEffect lag or scroll jitter
   const handleToggle = () => {
     if (!open && containerRef.current) {
       const rect = containerRef.current.getBoundingClientRect();
@@ -350,6 +355,7 @@ function ArticleDropdown({ allArticles, articlesLoading, selectedArticle, onSele
   return (
     <>
       <div ref={containerRef} className="relative">
+        {/* Trigger button */}
         <button
           type="button"
           onClick={handleToggle}
@@ -369,12 +375,14 @@ function ArticleDropdown({ allArticles, articlesLoading, selectedArticle, onSele
         </button>
       </div>
 
+      {/* Fixed-position dropdown portal — escapes all overflow:hidden parents */}
       {open && (
         <div
           id="article-dropdown-portal"
           style={{ position: "fixed", top: dropPos.top, left: dropPos.left, width: dropPos.width, zIndex: 9999 }}
           className="bg-white border border-gold/30 rounded-[12px] shadow-2xl overflow-hidden"
         >
+          {/* Search input */}
           <div className="p-2 border-b border-gold/15">
             <div className="relative">
               <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -396,6 +404,7 @@ function ArticleDropdown({ allArticles, articlesLoading, selectedArticle, onSele
             </div>
           </div>
 
+          {/* Article list */}
           <div className="max-h-[260px] overflow-y-auto">
             {filtered.length === 0 ? (
               <p className="text-[12px] text-text-muted text-center py-4">
@@ -406,7 +415,7 @@ function ArticleDropdown({ allArticles, articlesLoading, selectedArticle, onSele
                 <button
                   key={item.articleId}
                   type="button"
-                  onMouseDown={e => e.preventDefault()}
+                  onMouseDown={e => e.preventDefault()} // prevent blur before click
                   onClick={() => handleSelect(item)}
                   className={`w-full text-left px-3.5 py-2.5 text-[12.5px] border-b border-gold/10 last:border-0 transition-colors duration-100 cursor-pointer leading-[1.4] ${
                     selectedArticle?.articleId?.toString() === item.articleId?.toString()
@@ -431,18 +440,22 @@ function ArticleDropdown({ allArticles, articlesLoading, selectedArticle, onSele
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// GENERATE TIMELINE PANEL
+// GENERATE TIMELINE PANEL  (Req 4A — manual input + Req 3 — all articles dropdown)
 // ─────────────────────────────────────────────────────────────────────────────
 function GeneratePanel({ onStoryGenerated, user }) {
-  const [mode, setMode]                       = useState("input");
-  const [inputText, setInputText]             = useState("");
-  const [generating, setGenerating]           = useState(false);
-  const [errorMsg, setErrorMsg]               = useState("");
+  const [mode, setMode]                   = useState("input"); // "input" | "select"
+  const [inputText, setInputText]         = useState("");
+  const [generating, setGenerating]       = useState(false);
+  const [errorMsg, setErrorMsg]           = useState("");
+
+  // "Select Article" state
   const [allArticles, setAllArticles]         = useState([]);
   const [articlesLoading, setArticlesLoading] = useState(false);
   const [selectedArticle, setSelectedArticle] = useState(null);
-  const textareaRef                           = useRef(null);
 
+  const textareaRef = useRef(null);
+
+  // Load all articles when mode opens
   useEffect(() => {
     if (mode === "select" && allArticles.length === 0) {
       setArticlesLoading(true);
@@ -453,6 +466,7 @@ function GeneratePanel({ onStoryGenerated, user }) {
     }
   }, [mode]);
 
+  // ── A: Paste headline → generate ──────────────────────────────────────────
   const handleInputGenerate = async () => {
     if (!inputText.trim()) return;
     setGenerating(true);
@@ -470,6 +484,7 @@ function GeneratePanel({ onStoryGenerated, user }) {
     setGenerating(false);
   };
 
+  // ── B: Select article → generate ──────────────────────────────────────────
   const handleSelectGenerate = async () => {
     if (!selectedArticle) return;
     setGenerating(true);
@@ -493,6 +508,7 @@ function GeneratePanel({ onStoryGenerated, user }) {
 
   return (
     <div className="bg-white rounded-card border border-gold-subtle shadow-card mb-5">
+      {/* Panel header */}
       <div className="bg-gradient-to-r from-lemon to-white px-5 py-3.5 border-b border-gold/20">
         <div className="flex items-center gap-2 mb-0.5">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-maroon">
@@ -505,6 +521,7 @@ function GeneratePanel({ onStoryGenerated, user }) {
         </p>
       </div>
 
+      {/* Mode toggle */}
       <div className="flex border-b border-gold/15">
         {[
           { id: "input",  label: "Paste Headline" },
@@ -525,6 +542,7 @@ function GeneratePanel({ onStoryGenerated, user }) {
       </div>
 
       <div className="p-4">
+        {/* ── MODE A: Text input ── */}
         {mode === "input" && (
           <>
             <textarea
@@ -563,6 +581,7 @@ function GeneratePanel({ onStoryGenerated, user }) {
           </>
         )}
 
+        {/* ── MODE B: Select Article — dropdown with arrow ── */}
         {mode === "select" && (
           <>
             <p className="text-[11px] text-text-muted mb-2">
@@ -577,6 +596,7 @@ function GeneratePanel({ onStoryGenerated, user }) {
               placeholder="Select an article to build its timeline…"
             />
 
+            {/* Preview selected article */}
             {selectedArticle && (
               <div className="bg-lemon rounded-[10px] border border-gold/25 p-3 mt-3 mb-3">
                 <div className="flex items-center gap-2 mb-1">
@@ -585,7 +605,9 @@ function GeneratePanel({ onStoryGenerated, user }) {
                       {selectedArticle.category}
                     </span>
                   )}
-                  <span className="text-[10px] text-text-muted">· {timeAgo(selectedArticle.publishedAt)}</span>
+                  <span className="text-[10px] text-text-muted">
+                    · {timeAgo(selectedArticle.publishedAt)}
+                  </span>
                   {selectedArticle.source && (
                     <span className="text-[10px] text-text-muted">· {selectedArticle.source}</span>
                   )}
@@ -623,6 +645,7 @@ function GeneratePanel({ onStoryGenerated, user }) {
           </>
         )}
 
+        {/* Error message */}
         {errorMsg && (
           <div className="mt-3 flex items-start gap-2 bg-red-50 border border-red-200 rounded-[10px] px-3 py-2.5">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-red-500 flex-shrink-0 mt-0.5">
@@ -637,7 +660,7 @@ function GeneratePanel({ onStoryGenerated, user }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// MAIN PAGE
+// MAIN PAGE — no Trending tab, only "Continue This Story"
 // ─────────────────────────────────────────────────────────────────────────────
 export default function StoryTimelinePage() {
   const { openArticle, user, savedArticles } = useApp();
@@ -655,6 +678,7 @@ export default function StoryTimelinePage() {
 
   useEffect(() => { loadStories(); }, [user]);
 
+  // Fetch timelines for all saved articles
   const fetchSavedTimelines = async (ids) => {
     if (!ids?.length) { setSavedStories([]); return; }
     try {
@@ -663,6 +687,9 @@ export default function StoryTimelinePage() {
     } catch (_) {}
   };
 
+  // When saved articles change, fetch their timelines.
+  // If count increased (new save), also retry after 5s — backend processes
+  // processArticleIntoTimeline asynchronously so timeline may not exist yet.
   useEffect(() => {
     if (!savedArticles?.length) { setSavedStories([]); prevSavedCountRef.current = 0; return; }
     const ids = savedArticles.map(a => a.id || a._id).filter(Boolean);
@@ -670,6 +697,7 @@ export default function StoryTimelinePage() {
 
     fetchSavedTimelines(ids);
 
+    // If a new article was just saved, retry after 5s so backend has time to build timeline
     if (savedArticles.length > prevSavedCountRef.current) {
       clearTimeout(retryTimerRef.current);
       retryTimerRef.current = setTimeout(() => fetchSavedTimelines(ids), 5000);
@@ -690,21 +718,29 @@ export default function StoryTimelinePage() {
     setLoading(false);
   };
 
+  // Manual refresh — re-fetches both myStories and savedStories from scratch
   const handleRefresh = async () => {
     setRefreshing(true);
     try {
       const ids = savedArticles.map(a => a.id || a._id).filter(Boolean);
-      await Promise.all([loadStories(), fetchSavedTimelines(ids)]);
+      await Promise.all([
+        loadStories(),
+        fetchSavedTimelines(ids),
+      ]);
     } catch (_) {}
     setRefreshing(false);
   };
 
+  // Remove a story — optimistic update + persist dismiss to backend
   const handleDeleteStory = async (storyId) => {
+    // Optimistic: remove from UI immediately
     setMyStories(prev => prev.filter(s => s._id !== storyId));
     setSavedStories(prev => prev.filter(s => s._id !== storyId));
+    // Persist to backend so it stays dismissed after refresh
     try {
       await timelineAPI.dismissStory(storyId);
     } catch (_) {
+      // If backend fails, re-fetch to restore consistent state
       const ids = savedArticles.map(a => a.id || a._id).filter(Boolean);
       await Promise.all([loadStories(), fetchSavedTimelines(ids)]);
     }
@@ -746,10 +782,6 @@ export default function StoryTimelinePage() {
   }
 
   // ── List view ──────────────────────────────────────────────────────────────
-  const myIds       = new Set(myStories.map(s => s._id?.toString()));
-  const uniqueSaved = savedStories.filter(s => !myIds.has(s._id?.toString()));
-  const totalCount  = myStories.length + uniqueSaved.length;
-
   return (
     <AppShell title="Story Timeline">
 
@@ -792,7 +824,7 @@ export default function StoryTimelinePage() {
         />
       )}
 
-      {/* Section header */}
+      {/* Section header — no tabs, just "Continue This Story" */}
       <div className="flex items-center justify-between mb-4">
         <div>
           <h3 className="font-playfair text-[19px] font-bold text-text-primary">Continue This Story</h3>
@@ -801,9 +833,11 @@ export default function StoryTimelinePage() {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          {totalCount > 0 && (
-            <span className="text-[11px] text-text-muted">{totalCount} active threads</span>
-          )}
+          {(() => {
+            const myIds = new Set(myStories.map(s => s._id?.toString()));
+            const total = myStories.length + savedStories.filter(s => !myIds.has(s._id?.toString())).length;
+            return total > 0 ? <span className="text-[11px] text-text-muted">{total} active threads</span> : null;
+          })()}
           {user && (
             <button
               onClick={handleRefresh}
@@ -837,7 +871,7 @@ export default function StoryTimelinePage() {
         </div>
       )}
 
-      {/* Empty state */}
+      {/* Empty + logged in hint */}
       {user && !loading && myStories.length === 0 && savedStories.length === 0 && (
         <div className="bg-lemon rounded-card border border-gold/30 p-4 mb-5 flex items-start gap-3">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-gold-muted flex-shrink-0 mt-0.5">
@@ -856,40 +890,32 @@ export default function StoryTimelinePage() {
       {/* Story list */}
       {loading && user ? (
         <SkeletonList />
-      ) : user && totalCount > 0 ? (
-        <div className="space-y-3">
-          {myStories.length > 0 && (
-            <>
-              <p className="text-[11px] font-bold uppercase tracking-[1.5px] text-text-muted px-1 pt-1">
-                From your reading history
-              </p>
-              {myStories.map((story, i) => (
-                <StoryListItem
-                  key={story._id || i}
-                  story={story}
-                  onClick={handleOpenStory}
-                  onDelete={handleDeleteStory}
-                />
-              ))}
-            </>
-          )}
-          {uniqueSaved.length > 0 && (
-            <>
-              <p className="text-[11px] font-bold uppercase tracking-[1.5px] text-text-muted px-1 pt-2">
-                From your saved articles
-              </p>
-              {uniqueSaved.map((story, i) => (
-                <StoryListItem
-                  key={story._id || i}
-                  story={story}
-                  onClick={handleOpenStory}
-                  onDelete={handleDeleteStory}
-                />
-              ))}
-            </>
-          )}
-        </div>
-      ) : null}
+      ) : (() => {
+        if (!user) return null;
+        const myIds = new Set(myStories.map(s => s._id?.toString()));
+        const uniqueSaved = savedStories.filter(s => !myIds.has(s._id?.toString()));
+        if (myStories.length === 0 && uniqueSaved.length === 0) return null;
+        return (
+          <div className="space-y-3">
+            {myStories.length > 0 && (
+              <>
+                <p className="text-[11px] font-bold uppercase tracking-[1.5px] text-text-muted px-1 pt-1">From your reading history</p>
+                {myStories.map((story, i) => (
+                  <StoryListItem key={story._id || i} story={story} onClick={handleOpenStory} onDelete={handleDeleteStory} />
+                ))}
+              </>
+            )}
+            {uniqueSaved.length > 0 && (
+              <>
+                <p className="text-[11px] font-bold uppercase tracking-[1.5px] text-text-muted px-1 pt-2">From your saved articles</p>
+                {uniqueSaved.map((story, i) => (
+                  <StoryListItem key={story._id || i} story={story} onClick={handleOpenStory} onDelete={handleDeleteStory} />
+                ))}
+              </>
+            )}
+          </div>
+        );
+      })()}
 
     </AppShell>
   );

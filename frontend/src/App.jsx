@@ -59,15 +59,9 @@ const PAGE_MAP = {
   perspectives: PerspectivesPage,
 };
 
-// ── Text size class map ────────────────────────────────────────────────────────
-const TEXT_SIZE_CLASS = {
-  Small: "nc-text-small",
-  Medium: "nc-text-medium",
-  Large: "nc-text-large",
-};
-
 function Router() {
-  const { page, user, readingPrefs } = useApp();
+  const { page, user, setPage } = useApp();
+  const [ready, setReady] = useState(false);
 
   // Restore last visited page as soon as possible
   useEffect(() => {
@@ -99,17 +93,7 @@ function Router() {
   const resolvedPage = PROTECTED.has(page) && !user ? "login" : page;
   const PageComponent = PAGE_MAP[resolvedPage] || LandingPage;
 
-  const Page = PAGE_MAP[resolvedPage] || LandingPage;
-
-  // ✅ FIXED: apply text size and language globally — no UI/design change
-  const sizeClass = TEXT_SIZE_CLASS[readingPrefs?.textSize] || "nc-text-medium";
-  const lang = readingPrefs?.language || "English";
-
-  return (
-    <div className={sizeClass} data-lang={lang}>
-      <Page />
-    </div>
-  );
+  return <PageComponent />;
 }
 
 export default function App() {

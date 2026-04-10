@@ -3,7 +3,7 @@ import User from "../models/User.js";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { sendOtpEmail } from "../services/emailService.js";
-// NOTE: Notifications are cron-only — no import needed here.
+import { processUserNotifications } from "../services/notificationService.js";
 
 const generateOtp = () => Math.floor(100000 + Math.random() * 900000).toString();
 const OTP_TTL_MS  = 10 * 60 * 1000; // 10 minutes
@@ -90,7 +90,10 @@ export const verifyOtp = async (req, res) => {
     delete userResponse.otp;
     delete userResponse.otpExpiry;
 
-    // NOTE: Notifications are handled exclusively by cron jobs — no login triggers.
+    // Fire-and-forget: send first-login notifications
+    processUserNotifications(user._id).catch((e) =>
+      console.warn("Post-verify notifications error:", e.message)
+    );
 
     return res.status(200).json({
       message: "Email verified! Welcome to NewsCrest.",
@@ -159,7 +162,12 @@ export const login = async (req, res) => {
     delete userResponse.password;
 
     res.json({ message: "Login successful", token, user: userResponse });
-    // NOTE: Notifications are handled exclusively by cron jobs — no login triggers.
+
+    // ── Fire-and-forget: process personalised notifications after login ────────
+    // This runs AFTER the response is sent so login stays fast.
+    processUserNotifications(user._id).catch((e) =>
+      console.warn("Post-login notifications error:", e.message)
+    );
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -178,7 +186,7 @@ export const getProfile = async (req, res) => {
 // ── UPDATE PROFILE ────────────────────────────────────────────────────────────
 export const updateProfile = async (req, res) => {
   try {
-    const { name, profileType, interests, country, state, city, notificationPreferences, textSize, language, feedLayout } = req.body;
+    const { name, profileType, interests, country, state, city, notificationPreferences } = req.body;
     const updateData = {};
     if (name)                    updateData.name                    = name;
     if (profileType)             updateData.profileType             = profileType;
@@ -187,60 +195,12 @@ export const updateProfile = async (req, res) => {
     if (state  !== undefined)    updateData.state                   = state;
     if (city   !== undefined)    updateData.city                    = city;
     if (notificationPreferences) updateData.notificationPreferences = notificationPreferences;
-    // ✅ ADDED: persist reading preferences
-    if (textSize)                updateData.textSize                = textSize;
-    if (language)                updateData.language                = language;
-    if (feedLayout)              updateData.feedLayout              = feedLayout;
 
     const user = await User.findByIdAndUpdate(req.user.id, updateData, {
       new: true, runValidators: true,
     }).select("-password");
 
     res.json({ message: "Profile updated successfully", user });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-};
-
-// ── CHANGE PASSWORD ───────────────────────────────────────────────────────────
-export const changePassword = async (req, res) => {
-  try {
-    const { oldPassword, newPassword } = req.body;
-    if (!oldPassword || !newPassword)
-      return res.status(400).json({ message: "Old and new password are required." });
-    if (newPassword.length < 6)
-      return res.status(400).json({ message: "New password must be at least 6 characters." });
-
-    const user = await User.findById(req.user.id);
-    if (!user) return res.status(404).json({ message: "User not found." });
-
-    const isMatch = await bcrypt.compare(oldPassword, user.password);
-    if (!isMatch) return res.status(400).json({ message: "Current password is incorrect." });
-
-    user.password = await bcrypt.hash(newPassword, 12);
-    await user.save();
-
-    res.json({ message: "Password changed successfully." });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-};
-
-// ── UPDATE PREFERENCES (reading prefs + notifications) ───────────────────────
-export const updatePreferences = async (req, res) => {
-  try {
-    const { textSize, language, feedLayout, notificationPreferences } = req.body;
-    const updateData = {};
-    if (textSize)                updateData.textSize                = textSize;
-    if (language)                updateData.language                = language;
-    if (feedLayout)              updateData.feedLayout              = feedLayout;
-    if (notificationPreferences) updateData.notificationPreferences = notificationPreferences;
-
-    const user = await User.findByIdAndUpdate(req.user.id, updateData, {
-      new: true, runValidators: true,
-    }).select("-password");
-
-    res.json({ message: "Preferences updated successfully", user });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

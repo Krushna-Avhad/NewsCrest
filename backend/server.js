@@ -3,6 +3,7 @@ dotenv.config();
 import express from "express";
 import mongoose from "mongoose";
 import cors from "cors";
+import cron from "node-cron";
 
 import authRoutes from "./routes/authRoutes.js";
 import newsRoutes from "./routes/newsRoutes.js";
@@ -19,11 +20,15 @@ import perspectiveRoutes from "./routes/perspectiveRoutes.js";
 import News from "./models/News.js";
 import "./models/UserActivity.js";
 import { fetchNews, saveNewsToDatabase } from "./services/newsService.js";
+import { processArticleIntoTimeline }    from "./services/storyTimelineService.js";
+import {
+  processBreakingNewsAlerts,
+  processPersonalizedAlerts,
+  processDailyDigest,
+} from "./services/notificationService.js";
 import { verifyEmailConnection } from "./services/emailService.js";
 import factCheckRoutes from "./routes/factCheckRoutes.js";
 
-// ✅ FIX: All cron jobs centralised in cron/jobs.js — no inline scheduling
-import { registerCronJobs } from "./cron/jobs.js";
 
 const app = express();
 
@@ -237,8 +242,47 @@ mongoose
 
     await seedNews();
 
-    // ✅ FIX: All cron jobs registered from cron/jobs.js — single source of truth
-    registerCronJobs();
+    // ── Cron: Hourly news refresh ─────────────────────────────────────────────
+    cron.schedule("0 * * * *", () => {
+      refreshAllNews();
+    });
+
+    // ✅ Story Timeline: process latest articles into story threads every 2 hours
+    // ── Cron: Breaking news alerts — every hour, 5 min past ──────────────────
+    cron.schedule("5 * * * *", async () => {
+      console.log("🔔 Processing breaking news alerts...");
+      try { await processBreakingNewsAlerts(); }
+      catch (err) { console.warn("Breaking alerts error:", err.message); }
+    });
+
+    // ── Cron: Personalized alerts — every 6 hours ────────────────────────────
+    cron.schedule("0 */6 * * *", async () => {
+      console.log("🎯 Processing personalized alerts...");
+      try { await processPersonalizedAlerts(); }
+      catch (err) { console.warn("Personalized alerts error:", err.message); }
+    });
+
+    // ── Cron: Daily digest — every day at 8:00 AM ────────────────────────────
+    cron.schedule("0 8 * * *", async () => {
+      console.log("📅 Processing daily digest...");
+      try { await processDailyDigest(); }
+      catch (err) { console.warn("Daily digest error:", err.message); }
+    });
+
+    // ── Cron: Story timeline — every 2 hours ─────────────────────────────────
+    cron.schedule("30 */2 * * *", async () => {
+      console.log("🗞️  Story Timeline: processing latest articles...");
+      try {
+        const recent = await News.find().sort({ publishedAt: -1 }).limit(15);
+        for (const article of recent) {
+          await processArticleIntoTimeline(article);
+          await new Promise((r) => setTimeout(r, 600));
+        }
+        console.log("✅ Story Timeline batch complete.");
+      } catch (err) {
+        console.warn("Story Timeline cron error:", err.message);
+      }
+    });
 
     // Start the Express server
     console.log("🔍 Debug - process.env.PORT:", process.env.PORT);
@@ -248,6 +292,6 @@ mongoose
       console.log("📅 News automation is active (Runs every hour)");
     });
   })
-  .catch(err => {
+  .catch((err) => {
     console.error("❌ MongoDB connection failed:", err.message);
   });
