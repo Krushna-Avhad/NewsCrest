@@ -1,3 +1,4 @@
+import { useApp } from "../context/AppContext";
 import { useEffect, useState, useRef } from "react";
 import AppShell from "../components/layout/AppShell";
 import { EyeIcon } from "../components/ui/Icons";
@@ -5,6 +6,7 @@ import { Button } from "../components/ui/Primitives";
 import { timelineAPI, factCheckAPI } from "../services/api";
 
 export default function FactCheckPage() {
+  const { chatbotInitialQuery } = useApp();
   const [articles, setArticles] = useState([]);
   const [selectedArticle, setSelectedArticle] = useState(null);
   const [query, setQuery] = useState("");
@@ -38,34 +40,42 @@ export default function FactCheckPage() {
     return () =>
       document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+useEffect(() => {
+  if (chatbotInitialQuery && chatbotInitialQuery.title) {
+    setSelectedArticle(chatbotInitialQuery);
+    setQuery(chatbotInitialQuery.title);
+    setIsOpen(false);
 
+    handleVerify(chatbotInitialQuery); // 🔥 AUTO VERIFY
+  }
+}, [chatbotInitialQuery]);
   // Filter articles
   const filtered = articles.filter((a) =>
     a.title.toLowerCase().includes(query.toLowerCase())
   );
 
   // Verify logic
-  const handleVerify = async () => {
-    if (!selectedArticle) return;
+  const handleVerify = async (articleData = selectedArticle) => {
+  if (!articleData) return;
 
-    try {
-      setLoading(true);
-      setResult(null);
+  try {
+    setLoading(true);
+    setResult(null);
 
-      const res = await factCheckAPI.verify({
-        title: selectedArticle.title,
-        description:
-          selectedArticle.summary || selectedArticle.content,
-        source: selectedArticle.source,
-      });
+    const res = await factCheckAPI.verify({
+      title: articleData.title,
+      description:
+        articleData.summary || articleData.content,
+      source: articleData.source,
+    });
 
-      setResult(res);
-    } catch (err) {
-      console.error("Fact check failed:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
+    setResult(res);
+  } catch (err) {
+    console.error("Fact check failed:", err);
+  } finally {
+    setLoading(false);
+  }
+};
 
   return (
     <AppShell>
@@ -87,6 +97,7 @@ export default function FactCheckPage() {
           </p>
 
           {/* 🔍 SEARCHABLE DROPDOWN */}
+          {!chatbotInitialQuery && (
           <div className="relative" ref={wrapperRef}>
             <input
               type="text"
@@ -115,11 +126,12 @@ export default function FactCheckPage() {
   >
     {a.title}
   </div>
+                
 ))}
               </div>
             )}
           </div>
-
+          )}
           {/* SELECTED ARTICLE PREVIEW */}
           {selectedArticle && (
             <div className="mt-4 bg-gold/20 border border-gold/30 rounded-[12px] p-4">
