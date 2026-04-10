@@ -1,6 +1,5 @@
 // src/components/layout/TopBar.jsx
 import { useApp } from "../../context/AppContext";
-import { LogoDark } from "../ui/Logo";
 import { SearchIcon, BellIcon, UserIcon } from "../ui/Icons";
 
 function ArrowLeftIcon({ size = 16, className = "" }) {
@@ -23,11 +22,10 @@ function ArrowLeftIcon({ size = 16, className = "" }) {
 }
 
 export default function TopBar({ title }) {
-  const { setPage, goBack, canGoBack, alertCount, user } = useApp();
+  const { setPage, goBack, canGoBack, alertCount } = useApp();
 
   return (
     <header className="bg-white border-b border-gold/30 px-9 py-3.5 flex items-center justify-between sticky top-0 z-50 shadow-[0_2px_12px_rgba(42,31,31,0.05)]">
-      {/* Logo + Back Button + Title */}
       <div className="flex items-center gap-3">
         {canGoBack && (
           <button
@@ -38,27 +36,11 @@ export default function TopBar({ title }) {
             <ArrowLeftIcon size={15} />
           </button>
         )}
-
-        {/* Smart Logo */}
-        <button
-          onClick={() => {
-            if (user) {
-              setPage("dashboard"); // Logged-in users go to Dashboard
-            } else {
-              window.scrollTo({ top: 0, behavior: "smooth" }); // Landing page → scroll to top
-            }
-          }}
-          className="bg-transparent border-none cursor-pointer p-0 hover:opacity-80 transition-opacity -ml-1"
-        >
-          <LogoDark size="md" />
-        </button>
-
-        <h1 className="font-playfair text-[20px] font-bold text-text-primary ml-2">
+        <h1 className="font-playfair text-[20px] font-bold text-text-primary">
           {title}
         </h1>
       </div>
 
-      {/* Right Side Icons */}
       <div className="flex items-center gap-3">
         <button
           onClick={() => setPage("explore")}
@@ -68,6 +50,7 @@ export default function TopBar({ title }) {
           <SearchIcon size={16} />
         </button>
 
+        {/* Bell with live alert badge */}
         <button
           onClick={() => setPage("notifications")}
           title="Notifications"
