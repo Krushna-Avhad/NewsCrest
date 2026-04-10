@@ -27,6 +27,8 @@ import {
   processDailyDigest,
 } from "./services/notificationService.js";
 import { verifyEmailConnection } from "./services/emailService.js";
+import factCheckRoutes from "./routes/factCheckRoutes.js";
+
 
 const app = express();
 
@@ -39,15 +41,15 @@ app.use(cors());
 app.use(express.json());
 
 // ── Routes ────────────────────────────────────────────────────────────────────
-app.use("/api/auth", authRoutes);
-app.use("/api/news", newsRoutes);
-app.use("/api/user", userRoutes);
-app.use("/api/compare", compareRoutes);
-app.use("/api/tasks", taskRoutes);
-app.use("/api/alerts", alertRoutes);
-app.use("/api/search", searchRoutes);
-app.use("/api/chatbot", chatbotRoutes);
-app.use("/api/hatke", hatkeRoutes);
+app.use("/api/auth",    authRoutes);
+app.use("/api/news",    newsRoutes);
+app.use("/api/user",    userRoutes);
+app.use("/api/fact-check", factCheckRoutes);
+app.use("/api/tasks",   taskRoutes);
+app.use("/api/alerts",  alertRoutes);
+app.use("/api/search",  searchRoutes);
+app.use("/api/chatbot",   chatbotRoutes);
+app.use("/api/hatke",    hatkeRoutes);
 app.use("/api/timeline", storyTimelineRoutes);
 app.use("/api/perspective", perspectiveRoutes);
 

@@ -23,7 +23,7 @@ const NAV_ITEMS = [
   { id: "categories", label: "Categories", Icon: GridIcon },
   { section: "AI Tools" },
   { id: "chatbot", label: "AI Chatbot", Icon: BotIcon },
-  { id: "compare", label: "Compare News", Icon: ScaleIcon },
+  { id: "factcheck", label: "Fact Check", Icon: ScaleIcon },
   { section: "My Content" },
   { id: "saved", label: "Saved Articles", Icon: BookmarkIcon },
   { id: "notifications", label: "Notifications", Icon: BellIcon },

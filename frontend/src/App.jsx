@@ -12,7 +12,7 @@ import CategoriesPage from "./pages/CategoriesPage";
 import CategoryDetailPage from "./pages/CategoryDetailPage";
 import ArticleDetailPage from "./pages/ArticleDetailPage";
 import ChatbotPage from "./pages/ChatbotPage";
-import ComparePage from "./pages/ComparePage";
+import FactCheckPage from "./pages/FactCheckPage";
 import SavedPage from "./pages/SavedPage";
 import NotificationsPage from "./pages/NotificationsPage";
 import NotesPage from "./pages/NotesPage";
@@ -49,7 +49,7 @@ const PAGE_MAP = {
   catdetail: CategoryDetailPage,
   article: ArticleDetailPage,
   chatbot: ChatbotPage,
-  compare: ComparePage,
+  factcheck: FactCheckPage,
   saved: SavedPage,
   notifications: NotificationsPage,
   notes: NotesPage,

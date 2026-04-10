@@ -71,9 +71,9 @@ const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [profileType, setProfileType] = useState("IT Employee");
-  const [city, setCity] = useState("Pune");
-  const [state, setState] = useState("Maharashtra");
+  const [profileType, setProfileType] = useState([]);
+  const [city, setCity] = useState("");
+  const [state, setState] = useState("");
   const [selectedInterests, setSelectedInterests] = useState([
     "Technology",
     "AI",
@@ -187,6 +187,13 @@ const generatePassword = () => {
 
   setPassword(password);
   setConfirmPassword(password);
+};
+const toggleProfileType = (p) => {
+  setProfileType((prev) =>
+    prev.includes(p)
+      ? prev.filter((x) => x !== p)
+      : [...prev, p]
+  );
 };
   return (
     <div className="min-h-screen grid grid-cols-2">
@@ -423,15 +430,15 @@ const generatePassword = () => {
                 {PROFILE_TYPES.map((p) => (
                   <button
                     key={p}
-                    onClick={() => setProfileType(p)}
-                    className={`p-3.5 rounded-[12px] border-[1.5px] text-left cursor-pointer transition-all duration-200 ${profileType === p ? "border-maroon bg-maroon/5 shadow-[0_0_0_1px_#741515]" : "border-gold/25 hover:border-gold/50 hover:bg-smoke"}`}
+                    onClick={() => toggleProfileType(p)}
+                    className={`p-3.5 rounded-[12px] border-[1.5px] text-left cursor-pointer transition-all duration-200 ${profileType.includes(p) ? "border-maroon bg-maroon/5 shadow-[0_0_0_1px_#741515]" : "border-gold/25 hover:border-gold/50 hover:bg-smoke"}`}
                   >
                     <div
-                      className={`text-[13.5px] font-semibold ${profileType === p ? "text-maroon" : "text-text-primary"}`}
+                      className={`text-[13.5px] font-semibold ${profileType.includes(p) ? "text-maroon" : "text-text-primary"}`}
                     >
                       {p}
                     </div>
-                    {profileType === p && (
+                    {profileType.includes(p) && (
                       <div className="text-[11px] text-maroon/60 mt-0.5">
                         Selected
                       </div>
@@ -446,9 +453,16 @@ const generatePassword = () => {
                   </label>
                   <input
                     type="text"
-                    placeholder="Pune"
+                    placeholder="First Enter State, then City"
                     value={city}
-                    onChange={(e) => setCity(e.target.value)}
+                    onChange={(e) => {
+  if (!state) {
+    alert("Please select state first");
+    return;
+  }
+  setCity(e.target.value);
+}}
+                    disabled={!state}
                     className="w-full px-4 py-[11px] border-[1.5px] border-gold/25 rounded-[12px] font-inter text-[14px] text-text-primary bg-white outline-none transition-all duration-200 focus:border-gold focus:shadow-[0_0_0_3px_rgba(218,165,32,0.12)]"
                   />
                 </div>

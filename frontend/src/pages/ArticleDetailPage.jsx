@@ -86,7 +86,7 @@ export default function ArticleDetailPage() {
     addNote,
     toggleSaveArticle,
     isArticleSaved,
-    readingPrefs,
+    readingPrefs, 
     feedArticles,
     headlines,
     setChatbotInitialQuery,
@@ -348,9 +348,16 @@ export default function ArticleDetailPage() {
             <Button variant="secondary" size="sm" onClick={handleShare}>
               <ShareIcon size={15} /> {shareMsg || "Share"}
             </Button>
-            <Button variant="secondary" size="sm" onClick={() => openCompareWith(article)}>
-              <ScaleIcon size={15} /> Compare
-            </Button>
+            <Button
+  variant="secondary"
+  size="sm"
+  onClick={() => {
+    setPage("factcheck");
+    setChatbotInitialQuery(article); // 👈 we reuse this to pass article
+  }}
+>
+  <ScaleIcon size={15} /> Fact Check
+</Button>
             <Button
               variant={perspectivesVisible ? "primary" : "outline"}
               size="sm"

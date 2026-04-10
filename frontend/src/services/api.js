@@ -403,3 +403,12 @@ export const perspectiveAPI = {
     return data.perspectives || [];
   },
 };
+
+export const factCheckAPI = {
+  verify: async (payload) => {
+    return request("/fact-check", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+};
