@@ -1,11 +1,18 @@
 // controllers/newsController.js
-import { fetchAllCategories, fetchNews, saveNewsToDatabase } from "../services/newsService.js";
+import {
+  fetchAllCategories,
+  fetchNews,
+  saveNewsToDatabase,
+} from "../services/newsService.js";
 import { summarizeNews, filterNewsAdvanced } from "../services/aiService.js";
 import { processChatbotQuery } from "../services/aiService.js";
 import User from "../models/User.js";
 import News from "../models/News.js";
 import Groq from "groq-sdk";
-import { recordUserActivity, processArticleIntoTimeline } from "../services/storyTimelineService.js";
+import {
+  recordUserActivity,
+  processArticleIntoTimeline,
+} from "../services/storyTimelineService.js";
 
 // Initialize Groq
 const groq = new Groq({ apiKey: process.env.GROK_API_KEY });
@@ -38,7 +45,7 @@ Respond ONLY in JSON:
     return JSON.parse(cleanedJson);
   } catch (error) {
     const greetings = ["hi", "hello", "who are you", "what is this"];
-    const isGreeting = greetings.some(g => query.toLowerCase().includes(g));
+    const isGreeting = greetings.some((g) => query.toLowerCase().includes(g));
     return {
       isNewsQuery: !isGreeting,
       keywords: query,
@@ -80,7 +87,8 @@ export const getMyFeed = async (req, res) => {
     const summarized = [];
 
     for (const item of limitedForAI) {
-      const text = item.content || item.description || item.summary || item.title;
+      const text =
+        item.content || item.description || item.summary || item.title;
       try {
         // Pass item._id so aiService can cache & skip re-summarizing
         const summary = await summarizeNews(text, item._id);
@@ -116,7 +124,6 @@ export const getMyFeed = async (req, res) => {
 
     // 6. ✅ Return { news } shape — fixes api.js reading data.news as undefined
     res.json({ news: summarized });
-
   } catch (err) {
     console.error("Feed Error:", err.message);
     res.status(500).json({ error: err.message });
@@ -152,8 +159,8 @@ export const getAllNews = async (req, res) => {
         total,
         totalPages,
         hasNext: page < totalPages,
-        hasPrev: page > 1
-      }
+        hasPrev: page > 1,
+      },
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -175,23 +182,21 @@ export const getPersonalizedFeed = async (req, res) => {
     if (user.interests && user.interests.length > 0) {
       // Map interest tags to actual DB category names
       const interestToCategoryMap = {
-        "AI": "Technology",
-        "Startups": "Business",
-        "Tech": "Technology",
-        "Finance": "Finance",
-        "Sports": "Sports",
-        "Science": "Science",
-        "Business": "Business",
-        "Health": "Health",
-        "Entertainment": "Entertainment",
-        "Politics": "Politics",
-        "Education": "Education",
-        "Technology": "Technology",
+        AI: "Technology",
+        Startups: "Business",
+        Tech: "Technology",
+        Finance: "Finance",
+        Sports: "Sports",
+        Science: "Science",
+        Business: "Business",
+        Health: "Health",
+        Entertainment: "Entertainment",
+        Politics: "Politics",
+        Education: "Education",
+        Technology: "Technology",
       };
       const mappedCategories = [
-        ...new Set(
-          user.interests.map(i => interestToCategoryMap[i] || i)
-        )
+        ...new Set(user.interests.map((i) => interestToCategoryMap[i] || i)),
       ];
       query.category = { $in: mappedCategories };
     }
@@ -228,13 +233,13 @@ export const getPersonalizedFeed = async (req, res) => {
         total,
         totalPages,
         hasNext: page < totalPages,
-        hasPrev: page > 1
+        hasPrev: page > 1,
       },
       personalizationInfo: {
         interests: user.interests,
         profileType: user.profileType,
-        location: { city: user.city, state: user.state }
-      }
+        location: { city: user.city, state: user.state },
+      },
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -247,7 +252,7 @@ export const getTopHeadlines = async (req, res) => {
     const limit = parseInt(req.query.limit) || 10;
 
     // Try Top Headlines category first; fall back to any recent articles
-    let news = await News.find({ category: 'Top Headlines' })
+    let news = await News.find({ category: "Top Headlines" })
       .sort({ publishedAt: -1 })
       .limit(limit);
 
@@ -270,15 +275,15 @@ export const getTrendingNews = async (req, res) => {
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
     let news = await News.find({
-      publishedAt: { $gte: sevenDaysAgo }
+      publishedAt: { $gte: sevenDaysAgo },
     })
-      .sort({ viewCount: -1, 'engagement.saves': -1, publishedAt: -1 })
+      .sort({ viewCount: -1, "engagement.saves": -1, publishedAt: -1 })
       .limit(limit);
 
     // Fallback — if less than 5 recent articles, just get most viewed overall
     if (news.length < 5) {
       news = await News.find()
-        .sort({ viewCount: -1, 'engagement.saves': -1, publishedAt: -1 })
+        .sort({ viewCount: -1, "engagement.saves": -1, publishedAt: -1 })
         .limit(limit);
     }
 
@@ -297,71 +302,91 @@ export const getCategoryNews = async (req, res) => {
     const skip = (page - 1) * limit;
 
     const categoryAliasMap = {
-      "good news":     ["Good News", "Health", "Science", "Education", "Entertainment"],
-      "goodnews":      ["Good News", "Health", "Science", "Education", "Entertainment"],
-      "local":         ["Local", "India", "Top Headlines"],
-      "india":         ["India", "Top Headlines", "Politics", "World"],
-      "fashion":       ["Fashion", "Entertainment"],
-      "finance":       ["Finance", "Business"],
-      "business":      ["Business", "Finance"],
+      "good news": [
+        "Good News",
+        "Health",
+        "Science",
+        "Education",
+        "Entertainment",
+      ],
+      goodnews: [
+        "Good News",
+        "Health",
+        "Science",
+        "Education",
+        "Entertainment",
+      ],
+      local: ["Local", "India", "Top Headlines"],
+      india: ["India", "Top Headlines", "Politics", "World"],
+      fashion: ["Fashion", "Entertainment"],
+      finance: ["Finance", "Business"],
+      business: ["Business", "Finance"],
       "top headlines": ["Top Headlines"],
-      "technology":    ["Technology"],
-      "sports":        ["Sports"],
-      "health":        ["Health"],
-      "science":       ["Science"],
-      "entertainment": ["Entertainment"],
-      "politics":      ["Politics"],
-      "education":     ["Education"],
-      "world":         ["World"],
+      technology: ["Technology"],
+      sports: ["Sports"],
+      health: ["Health"],
+      science: ["Science"],
+      entertainment: ["Entertainment"],
+      politics: ["Politics"],
+      education: ["Education"],
+      world: ["World"],
     };
 
-const key = category.toLowerCase().trim();
+    const key = category.toLowerCase().trim();
 
-// Local news — use user's city/state if logged in
-if (key === "local") {
-  const city = req.user?.city;
-  const state = req.user?.state;
+    // Local news — use user's city/state if logged in
+    if (key === "local") {
+      const city = req.user?.city;
+      const state = req.user?.state;
 
-  let localQuery;
-  if (city || state) {
-    const locationOr = [];
-    if (city) locationOr.push(
-      { title: new RegExp(`\\b${city}\\b`, 'i') },
-      { content: new RegExp(`\\b${city}\\b`, 'i') }
-    );
-    if (state) locationOr.push(
-      { title: new RegExp(`\\b${state}\\b`, 'i') },
-      { content: new RegExp(`\\b${state}\\b`, 'i') }
-    );
-    localQuery = { $or: locationOr };
-  } else {
-    localQuery = { category: { $in: ["India", "Top Headlines"] } };
-  }
+      let localQuery;
+      if (city || state) {
+        const locationOr = [];
+        if (city)
+          locationOr.push(
+            { title: new RegExp(`\\b${city}\\b`, "i") },
+            { content: new RegExp(`\\b${city}\\b`, "i") },
+          );
+        if (state)
+          locationOr.push(
+            { title: new RegExp(`\\b${state}\\b`, "i") },
+            { content: new RegExp(`\\b${state}\\b`, "i") },
+          );
+        localQuery = { $or: locationOr };
+      } else {
+        localQuery = { category: { $in: ["India", "Top Headlines"] } };
+      }
 
-  let news = await News.find(localQuery)
-    .sort({ publishedAt: -1 })
-    .skip(skip)
-    .limit(limit);
+      let news = await News.find(localQuery)
+        .sort({ publishedAt: -1 })
+        .skip(skip)
+        .limit(limit);
 
-  // NO random fallback — if no local news, return empty
-  // Frontend will show "No local news found" message
+      // NO random fallback — if no local news, return empty
+      // Frontend will show "No local news found" message
 
-  const total = await News.countDocuments(localQuery);
-  const totalPages = Math.ceil(total / limit);
+      const total = await News.countDocuments(localQuery);
+      const totalPages = Math.ceil(total / limit);
 
-  return res.json({
-    news,
-    pagination: { page, limit, total, totalPages,
-      hasNext: page < totalPages, hasPrev: page > 1 }
-  });
-}
+      return res.json({
+        news,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages,
+          hasNext: page < totalPages,
+          hasPrev: page > 1,
+        },
+      });
+    }
 
-const searchTerms = categoryAliasMap[key] || [
-  category,
-  category.charAt(0).toUpperCase() + category.slice(1).toLowerCase()
-];
+    const searchTerms = categoryAliasMap[key] || [
+      category,
+      category.charAt(0).toUpperCase() + category.slice(1).toLowerCase(),
+    ];
 
-const query = { category: { $in: searchTerms } };;
+    const query = { category: { $in: searchTerms } };
 
     // ✅ Respect sortBy param from frontend tab selection
     const sortBy = req.query.sortBy || "date";
@@ -370,10 +395,7 @@ const query = { category: { $in: searchTerms } };;
         ? { trending: -1, viewCount: -1, publishedAt: -1 }
         : { publishedAt: -1 };
 
-    let news = await News.find(query)
-      .sort(sortOptions)
-      .skip(skip)
-      .limit(limit);
+    let news = await News.find(query).sort(sortOptions).skip(skip).limit(limit);
 
     if (news.length === 0) {
       news = await News.find().sort(sortOptions).skip(skip).limit(limit);
@@ -385,10 +407,13 @@ const query = { category: { $in: searchTerms } };;
     res.json({
       news,
       pagination: {
-        page, limit, total, totalPages,
+        page,
+        limit,
+        total,
+        totalPages,
         hasNext: page < totalPages,
-        hasPrev: page > 1
-      }
+        hasPrev: page > 1,
+      },
     });
   } catch (err) {
     console.error("Category Fetch Error:", err.message);
@@ -396,45 +421,56 @@ const query = { category: { $in: searchTerms } };;
   }
 };
 
-// ✅ GET LOCAL NEWS
+// ✅ IMPROVED LOCAL NEWS HANDLER
 export const getLocalNewsHandler = async (req, res) => {
   try {
-    const user = await User.findById(req.user.id);
-    if (!user) return res.status(404).json({ error: "User not found" });
+    if (!req.user) {
+      return res.json({ news: [], message: "Please log in to see local news" });
+    }
 
-    const city = user.city;
-    const state = user.state;
+    const { city, state } = req.user;
 
     if (!city && !state) {
-      // User hasn't set location — return empty so frontend hides Local section
-      return res.json({ news: [], location: {}, message: "No location set" });
+      return res.json({
+        news: [],
+        message: "Please set your city and state in your profile",
+      });
     }
 
-    // Build strict location query — must match city OR state in title/content
-    const orConditions = [];
+    // More flexible matching — match city or state in title, content, or summary
+    const conditions = [];
+
     if (city) {
-      orConditions.push(
-        { title: new RegExp(`\\b${city}\\b`, 'i') },
-        { content: new RegExp(`\\b${city}\\b`, 'i') }
-      );
-    }
-    if (state) {
-      orConditions.push(
-        { title: new RegExp(`\\b${state}\\b`, 'i') },
-        { content: new RegExp(`\\b${state}\\b`, 'i') }
+      const cityRegex = new RegExp(city, "i");
+      conditions.push(
+        { title: cityRegex },
+        { content: cityRegex },
+        { summary: cityRegex },
       );
     }
 
-    const news = await News.find({ $or: orConditions })
-      .sort({ publishedAt: -1 })
+    if (state) {
+      const stateRegex = new RegExp(state, "i");
+      conditions.push(
+        { title: stateRegex },
+        { content: stateRegex },
+        { summary: stateRegex },
+      );
+    }
+
+    const news = await News.find(
+      conditions.length > 0 ? { $or: conditions } : {},
+    )
+      .sort({ publishedAt: -1, importance: -1 })
       .limit(20);
 
-    res.json({ 
+    res.json({
       news,
       location: { city, state },
-      message: news.length > 0 
-        ? `News for ${[city, state].filter(Boolean).join(", ")}` 
-        : "No local news found for your area"
+      message:
+        news.length > 0
+          ? `Local news near ${city || state}`
+          : `No recent news found for ${city || state} at the moment`,
     });
   } catch (err) {
     console.error("Local News Error:", err.message);
@@ -445,13 +481,26 @@ export const getLocalNewsHandler = async (req, res) => {
 // ✅ GET GOOD NEWS
 export const getGoodNewsHandler = async (req, res) => {
   try {
-    const positiveWords = ["inspiring", "success", "breakthrough", "won", "happy", "helps", "recovery", "good"];
-    
+    const positiveWords = [
+      "inspiring",
+      "success",
+      "breakthrough",
+      "won",
+      "happy",
+      "helps",
+      "recovery",
+      "good",
+    ];
+
     const query = {
       $or: [
-        { title: { $in: positiveWords.map(w => new RegExp(w, 'i')) } },
-        { category: { $in: ["Health", "Science", "Education", "Entertainment"] } }
-      ]
+        { title: { $in: positiveWords.map((w) => new RegExp(w, "i")) } },
+        {
+          category: {
+            $in: ["Health", "Science", "Education", "Entertainment"],
+          },
+        },
+      ],
     };
 
     const news = await News.find(query).sort({ publishedAt: -1 }).limit(20);
@@ -467,7 +516,7 @@ export const getGoodNewsHandler = async (req, res) => {
 export const getArticle = async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     const article = await News.findById(id);
     if (!article) {
       return res.status(404).json({ message: "Article not found" });
@@ -485,7 +534,7 @@ export const getArticle = async (req, res) => {
           user.readingHistory.push({
             articleId: article._id,
             readAt: new Date(),
-            readTime: article.readTime
+            readTime: article.readTime,
           });
           await user.save();
           // Persist rich snapshot for timeline generation (non-blocking)
@@ -514,7 +563,7 @@ export const saveArticle = async (req, res) => {
 
     // Update article engagement
     await News.findByIdAndUpdate(articleId, {
-      $inc: { 'engagement.saves': 1 }
+      $inc: { "engagement.saves": 1 },
     });
 
     // Persist rich snapshot for timeline generation (non-blocking)
@@ -538,12 +587,12 @@ export const unsaveArticle = async (req, res) => {
     const userId = req.user.id;
 
     await User.findByIdAndUpdate(userId, {
-      $pull: { savedArticles: articleId }
+      $pull: { savedArticles: articleId },
     });
 
     // Update article engagement
     await News.findByIdAndUpdate(articleId, {
-      $inc: { 'engagement.saves': -1 }
+      $inc: { "engagement.saves": -1 },
     });
 
     res.json({ message: "Article removed from saved" });
@@ -560,11 +609,10 @@ export const getSavedArticles = async (req, res) => {
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
 
-    const user = await User.findById(userId)
-      .populate({
-        path: 'savedArticles',
-        options: { sort: { createdAt: -1 }, skip, limit }
-      });
+    const user = await User.findById(userId).populate({
+      path: "savedArticles",
+      options: { sort: { createdAt: -1 }, skip, limit },
+    });
 
     const total = user.savedArticles.length;
     const totalPages = Math.ceil(total / limit);
@@ -577,8 +625,8 @@ export const getSavedArticles = async (req, res) => {
         total,
         totalPages,
         hasNext: page < totalPages,
-        hasPrev: page > 1
-      }
+        hasPrev: page > 1,
+      },
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -588,18 +636,18 @@ export const getSavedArticles = async (req, res) => {
 // ✅ REFRESH NEWS (FETCH FROM EXTERNAL APIs)
 export const refreshNews = async (req, res) => {
   try {
-    const { category = 'general' } = req.query;
-    
+    const { category = "general" } = req.query;
+
     // Fetch from external API
     const articles = await fetchNews(category);
-    
+
     // Save to database
     const savedNews = await saveNewsToDatabase(articles);
-    
-    res.json({ 
+
+    res.json({
       message: "News refreshed successfully",
       newArticlesCount: savedNews.length,
-      articles: savedNews
+      articles: savedNews,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -611,7 +659,7 @@ export const getCategoryCounts = async (req, res) => {
   try {
     const counts = await News.aggregate([
       { $group: { _id: "$category", count: { $sum: 1 } } },
-      { $sort: { count: -1 } }
+      { $sort: { count: -1 } },
     ]);
     // Return as a flat map: { Technology: 412, Sports: 339, ... }
     const countMap = {};
@@ -627,15 +675,27 @@ export const getCategoryCounts = async (req, res) => {
 // ✅ HELPER FUNCTION: GET CATEGORIES BASED ON PROFILE TYPE
 function getProfileCategories(profileType) {
   const profileMap = {
-    'Student': ['Education', 'Technology', 'Science', 'Career', 'Good News'],
-    'IT Employee': ['Technology', 'Business', 'Finance', 'Science', 'World'],
-    'Elderly': ['Health', 'Good News', 'Politics', 'Education', 'Local'],
-    'Business Person': ['Business', 'Finance', 'Politics', 'Technology', 'World'],
-    'Homemaker': ['Health', 'Education', 'Good News', 'Local', 'Fashion'],
-    'General Reader': ['Top Headlines', 'World', 'India', 'Technology', 'Health']
+    Student: ["Education", "Technology", "Science", "Career", "Good News"],
+    "IT Employee": ["Technology", "Business", "Finance", "Science", "World"],
+    Elderly: ["Health", "Good News", "Politics", "Education", "Local"],
+    "Business Person": [
+      "Business",
+      "Finance",
+      "Politics",
+      "Technology",
+      "World",
+    ],
+    Homemaker: ["Health", "Education", "Good News", "Local", "Fashion"],
+    "General Reader": [
+      "Top Headlines",
+      "World",
+      "India",
+      "Technology",
+      "Health",
+    ],
   };
-  
-  return profileMap[profileType] || profileMap['General Reader'];
+
+  return profileMap[profileType] || profileMap["General Reader"];
 }
 
 // ✅ The Chatbot Handler
@@ -656,17 +716,27 @@ export const getChatbotResponse = async (req, res) => {
     if (aiResponse.isNewsQuery === true) {
       const searchTerms = aiResponse.keywords
         .toLowerCase()
-        .split(' ')
-        .filter(word => word.length > 2);
+        .split(" ")
+        .filter((word) => word.length > 2);
 
       // Strict match first: must mention at least two keywords
       articles = await News.find({
         $and: [
-          { title: { $regex: searchTerms[0] || '', $options: 'i' } },
+          { title: { $regex: searchTerms[0] || "", $options: "i" } },
           {
             $or: [
-              { title:       { $regex: searchTerms[1] || searchTerms[0], $options: 'i' } },
-              { description: { $regex: searchTerms[1] || searchTerms[0], $options: 'i' } },
+              {
+                title: {
+                  $regex: searchTerms[1] || searchTerms[0],
+                  $options: "i",
+                },
+              },
+              {
+                description: {
+                  $regex: searchTerms[1] || searchTerms[0],
+                  $options: "i",
+                },
+              },
             ],
           },
         ],
@@ -678,25 +748,28 @@ export const getChatbotResponse = async (req, res) => {
       if (articles.length === 0) {
         articles = await News.find({
           $or: [
-            { title:       { $in: searchTerms.map(t => new RegExp(t, 'i')) } },
-            { description: { $in: searchTerms.map(t => new RegExp(t, 'i')) } },
+            { title: { $in: searchTerms.map((t) => new RegExp(t, "i")) } },
+            {
+              description: { $in: searchTerms.map((t) => new RegExp(t, "i")) },
+            },
           ],
         })
           .sort({ publishedAt: -1 })
           .limit(3);
       } // ← Bug 2 fix: close the fallback if
-    }   // ← Bug 1 fix: close the isNewsQuery if
+    } // ← Bug 1 fix: close the isNewsQuery if
 
     // Bug 3 fix: res.json is always reached, regardless of which branch ran
     res.json({
       reply: aiResponse.text,
       articles,
     });
-
-  } catch (error) { // ← Bug 4 fix: try now has its closing } before catch
-    console.error('💥 Chatbot Controller Error:', error);
+  } catch (error) {
+    // ← Bug 4 fix: try now has its closing } before catch
+    console.error("💥 Chatbot Controller Error:", error);
     res.status(200).json({
-      reply: "I'm having a bit of trouble with my AI brain. How else can I help?",
+      reply:
+        "I'm having a bit of trouble with my AI brain. How else can I help?",
       articles: [],
     });
   }

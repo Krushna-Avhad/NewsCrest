@@ -50,11 +50,8 @@ export default function Sidebar() {
 
   return (
     <aside className="fixed left-0 top-0 bottom-0 w-[260px] bg-maroon flex flex-col z-[100] border-r border-white/10 overflow-y-auto">
-      {/* Logo */}
-      <div
-        className="px-6 pt-7 pb-5 border-b border-white/8 cursor-pointer group"
-        onClick={() => setPage("landing")}
-      >
+      {/* Logo - Now Static (Non-clickable) */}
+      <div className="px-6 pt-7 pb-5 border-b border-white/8">
         <Logo />
         <div
           className="gold-line-animate mt-1.5 h-[1.5px] bg-gold origin-left"
@@ -83,7 +80,6 @@ export default function Sidebar() {
 
           const { id, label, Icon } = item;
           const active = page === id;
-          // Show real alert count badge on notifications item
           const badge =
             id === "notifications" && alertCount > 0
               ? String(alertCount)
