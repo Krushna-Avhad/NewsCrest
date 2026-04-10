@@ -1,5 +1,5 @@
 // src/pages/PerspectivesPage.jsx
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useApp } from "../context/AppContext";
 import AppShell from "../components/layout/AppShell";
 import { perspectiveAPI, timelineAPI } from "../services/api";
@@ -63,6 +63,137 @@ const PERSONA_COLORS = {
   homemaker:   "bg-rose-50 border-rose-200 text-rose-600",
 };
 
+// ── Article dropdown with arrow toggle + fixed positioning ───────────────────
+function ArticleDropdown({ allArticles, articlesLoading, selectedArticle, onSelect }) {
+  const [open, setOpen]       = useState(false);
+  const [query, setQuery]     = useState("");
+  const [dropPos, setDropPos] = useState({ top: 0, left: 0, width: 0 });
+  const containerRef          = useRef(null);
+  const inputRef              = useRef(null);
+
+  // Close on outside click — only active when open
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => {
+      const portal = document.getElementById("persp-dropdown-portal");
+      if (
+        (containerRef.current && containerRef.current.contains(e.target)) ||
+        (portal && portal.contains(e.target))
+      ) return;
+      setOpen(false);
+      setQuery("");
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const filtered = query.trim()
+    ? allArticles.filter(a => a.title?.toLowerCase().includes(query.toLowerCase()))
+    : allArticles;
+
+  // Calculate position SYNCHRONOUSLY at click — no useEffect lag or scroll jitter
+  const handleToggle = () => {
+    if (!open && containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      setDropPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+    }
+    setOpen(v => !v);
+    setQuery("");
+  };
+
+  const handleSelect = (item) => {
+    onSelect(item);
+    setOpen(false);
+    setQuery("");
+  };
+
+  return (
+    <>
+      <div ref={containerRef}>
+        {/* Trigger button */}
+        <button
+          type="button"
+          onClick={handleToggle}
+          className="w-full flex items-center justify-between gap-2 px-3.5 py-2.5 border-[1.5px] border-gold/30 rounded-[10px] bg-smoke text-[13px] transition-all duration-200 hover:border-gold focus:outline-none cursor-pointer"
+          style={{ minHeight: 42 }}
+        >
+          <span className={`flex-1 text-left line-clamp-1 ${selectedArticle ? "text-text-primary font-medium" : "text-text-muted"}`}>
+            {selectedArticle ? selectedArticle.title : "Select an article…"}
+          </span>
+          <svg
+            width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+            strokeLinecap="round" strokeLinejoin="round"
+            className={`flex-shrink-0 text-text-muted transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+          >
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
+        </button>
+      </div>
+
+      {/* Fixed-position dropdown — escapes all overflow:hidden parents */}
+      {open && (
+        <div
+          id="persp-dropdown-portal"
+          style={{ position: "fixed", top: dropPos.top, left: dropPos.left, width: dropPos.width, zIndex: 9999 }}
+          className="bg-white border border-gold/30 rounded-[12px] shadow-2xl overflow-hidden"
+        >
+          {/* Search input */}
+          <div className="p-2 border-b border-gold/15">
+            <div className="relative">
+              <svg className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+              </svg>
+              <input
+                ref={inputRef}
+                type="text"
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                placeholder="Search articles…"
+                className="w-full pl-7 pr-3 py-1.5 text-[12.5px] bg-smoke rounded-[8px] outline-none border border-transparent focus:border-gold/30 placeholder:text-text-muted text-text-primary"
+              />
+              {articlesLoading && (
+                <svg className="absolute right-2.5 top-1/2 -translate-y-1/2 animate-spin text-text-muted" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+                </svg>
+              )}
+            </div>
+          </div>
+
+          {/* Article list — title only */}
+          <div className="max-h-[260px] overflow-y-auto">
+            {filtered.length === 0 ? (
+              <p className="text-[12px] text-text-muted text-center py-4">
+                {query ? "No articles match your search" : articlesLoading ? "Loading…" : "No articles available"}
+              </p>
+            ) : (
+              filtered.map(item => (
+                <button
+                  key={item.articleId}
+                  type="button"
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={() => handleSelect(item)}
+                  className={`w-full text-left px-3.5 py-2.5 text-[12.5px] border-b border-gold/10 last:border-0 transition-colors duration-100 cursor-pointer leading-[1.4] ${
+                    selectedArticle?.articleId?.toString() === item.articleId?.toString()
+                      ? "bg-lemon text-text-primary font-semibold"
+                      : "text-text-primary hover:bg-smoke"
+                  }`}
+                >
+                  {item.title}
+                </button>
+              ))
+            )}
+          </div>
+          {filtered.length > 0 && (
+            <div className="px-3 py-1.5 border-t border-gold/10 bg-smoke/40">
+              <p className="text-[10px] text-text-muted">{filtered.length} article{filtered.length !== 1 ? "s" : ""}{query ? " found" : " available"}</p>
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
 // ── Skeleton loader ───────────────────────────────────────────────────────────
 function Skeleton() {
   return (
@@ -110,12 +241,11 @@ function PersonaCard({ persona, isActive, onClick }) {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function PerspectivesPage() {
-  const { activeArticle } = useApp();
+  const { perspectivesHandoff, setPerspectivesHandoff } = useApp();
 
-  // Dropdown state — all articles from DB
-  const [allArticles, setAllArticles]       = useState([]);
+  // Article selector state
+  const [allArticles, setAllArticles]         = useState([]);
   const [articlesLoading, setArticlesLoading] = useState(true);
-  const [selectedId, setSelectedId]         = useState("");
   const [selectedArticle, setSelectedArticle] = useState(null);
 
   // Perspective results
@@ -125,36 +255,24 @@ export default function PerspectivesPage() {
   const [activeId, setActiveId]             = useState(null);
   const [hasSearched, setHasSearched]       = useState(false);
 
-  // Search input filter for dropdown
-  const [searchFilter, setSearchFilter]     = useState("");
-
-  // Load all articles on mount
+  // Load all articles on mount + consume handoff if navigated from article page
   useEffect(() => {
-    timelineAPI.getAllArticles()
-      .then(items => {
-        setAllArticles(items || []);
-        // Pre-select the currently open article if any
-        if (activeArticle?.id) {
-          const match = items.find(a => a.articleId?.toString() === activeArticle.id?.toString());
-          if (match) {
-            setSelectedId(match.articleId?.toString());
-            setSelectedArticle(match);
-          }
-        }
-      })
+    // If we arrived via "Open Full Perspectives View", pre-populate everything
+    if (perspectivesHandoff) {
+      setSelectedArticle(perspectivesHandoff.article);
+      setPerspectives(perspectivesHandoff.perspectives || []);
+      setActiveId(perspectivesHandoff.activeId || perspectivesHandoff.perspectives?.[0]?.id || null);
+      setHasSearched(true);
+      setPerspectivesHandoff(null); // consume and clear
+    }
+    timelineAPI.getAllArticles("")
+      .then(items => setAllArticles(items || []))
       .catch(() => setAllArticles([]))
       .finally(() => setArticlesLoading(false));
   }, []);
 
-  const filteredArticles = allArticles.filter(a =>
-    !searchFilter || a.title?.toLowerCase().includes(searchFilter.toLowerCase())
-  );
-
-  const handleSelect = (e) => {
-    const id = e.target.value;
-    setSelectedId(id);
-    const art = allArticles.find(a => a.articleId?.toString() === id);
-    setSelectedArticle(art || null);
+  const handleSelect = (item) => {
+    setSelectedArticle(item);
     // Reset results when a new article is selected
     setPerspectives([]);
     setHasSearched(false);
@@ -171,7 +289,7 @@ export default function PerspectivesPage() {
     try {
       const result = await perspectiveAPI.generate({
         title:       selectedArticle.title,
-        description: selectedArticle.description || "",
+        description: selectedArticle.description || selectedArticle.summary || "",
         category:    selectedArticle.category    || "",
       });
       setPerspectives(result || []);
@@ -208,43 +326,16 @@ export default function PerspectivesPage() {
             Select an Article
           </label>
 
-          {/* Search filter input
-          <div className="relative mb-2">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none">
-              <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-            </svg>
-            <input
-              type="text"
-              value={searchFilter}
-              onChange={e => setSearchFilter(e.target.value)}
-              placeholder="Filter articles by title…"
-              className="w-full pl-9 pr-4 py-2.5 border-[1.5px] border-gold/25 rounded-[10px] text-[13px] text-text-primary bg-smoke outline-none focus:border-gold transition-all duration-200 placeholder:text-text-muted"
-            />
-          </div> */}
+          <p className="text-[11px] text-text-muted mb-3">
+            {articlesLoading ? "Loading articles…" : `${allArticles.length} articles available`}
+          </p>
 
-          {/* Dropdown */}
-          {articlesLoading ? (
-            <div className="h-11 bg-smoke rounded-[10px] animate-pulse" />
-          ) : (
-            <div className="relative">
-              <select
-                value={selectedId}
-                onChange={handleSelect}
-                className="w-full px-3.5 py-2.5 pr-9 border-[1.5px] border-gold/25 rounded-[10px] text-[13px] text-text-primary bg-smoke outline-none focus:border-gold appearance-none cursor-pointer transition-all duration-200"
-              >
-                <option value="">— Choose an article to analyse —</option>
-                {filteredArticles.map(item => (
-                  <option key={item.articleId} value={item.articleId?.toString()}>
-                    {item.category ? `[${item.category}] ` : ""}
-                    {item.title?.slice(0, 80)}{item.title?.length > 80 ? "…" : ""}
-                  </option>
-                ))}
-              </select>
-              <svg className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-text-muted" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <polyline points="6 9 12 15 18 9"/>
-              </svg>
-            </div>
-          )}
+          <ArticleDropdown
+            allArticles={allArticles}
+            articlesLoading={articlesLoading}
+            selectedArticle={selectedArticle}
+            onSelect={handleSelect}
+          />
 
           {/* Selected article preview */}
           {selectedArticle && (
@@ -256,7 +347,7 @@ export default function PerspectivesPage() {
                   </span>
                 )}
                 {selectedArticle.source && (
-                  <span className="text-[10px] text-text-muted">· {selectedArticle.source}</span>
+                  <span className="text-[10px] text-text-muted">· {typeof selectedArticle.source === "object" ? selectedArticle.source?.name : selectedArticle.source}</span>
                 )}
                 {selectedArticle.publishedAt && (
                   <span className="text-[10px] text-text-muted">

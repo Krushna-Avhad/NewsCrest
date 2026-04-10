@@ -25,6 +25,7 @@ const userSchema = new mongoose.Schema({
     readTime: Number
   }],
   savedArticles: [{ type: mongoose.Schema.Types.ObjectId, ref: 'News' }],
+  dismissedStories: [{ type: mongoose.Schema.Types.ObjectId, ref: 'StoryTimeline' }],
   searchHistory: [{ query: String, searchedAt: { type: Date, default: Date.now } }],
   // ✅ ADDED: OTP Email Verification fields
   isVerified: { type: Boolean, default: false },

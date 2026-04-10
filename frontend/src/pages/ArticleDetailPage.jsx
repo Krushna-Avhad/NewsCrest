@@ -5,7 +5,7 @@ import { useApp } from "../context/AppContext";
 import AppShell from "../components/layout/AppShell";
 import { NewsCard } from "../components/cards/NewsCard";
 import { Button, NewsTag } from "../components/ui/Primitives";
-import { newsAPI, hatkeAPI, timelineAPI, perspectiveAPI } from "../services/api";
+import { newsAPI, hatkeAPI, perspectiveAPI } from "../services/api";
 import { useSpeechSynthesis } from "../hooks/useSpeechSynthesis";
 import {
   BookmarkIcon,
@@ -91,6 +91,7 @@ export default function ArticleDetailPage() {
     headlines,
     setChatbotInitialQuery,
     setPage,
+    setPerspectivesHandoff,
   } = useApp();
 
   const article = activeArticle;
@@ -130,9 +131,7 @@ export default function ArticleDetailPage() {
   const [perspectivesVisible, setPerspectivesVisible] = useState(false);
   const [perspectiveActive, setPerspectiveActive] = useState(null);
 
-  // Story Timeline (krushna's feature)
-  const [storyTimeline, setStoryTimeline] = useState(null);
-  const [timelineLoading, setTimelineLoading] = useState(false);
+  // Story Timeline removed from article page — lives on dedicated Story Timeline page only
 
   const summaryCalledRef = useRef(false);
   const hatkeCalledRef = useRef(false);
@@ -144,18 +143,9 @@ export default function ArticleDetailPage() {
       setHatkeText(article.hatkeSummary || "");
       hatkeCalledRef.current = false;
       summaryCalledRef.current = false;
-      setStoryTimeline(null);
       setPerspectives([]);
       setPerspectivesVisible(false);
       setPerspectiveActive(null);
-      if (article.id) {
-        setTimelineLoading(true);
-        timelineAPI
-          .getArticleTimeline(article.id)
-          .then(story => setStoryTimeline(story))
-          .catch(() => {})
-          .finally(() => setTimelineLoading(false));
-      }
     }
   }, [article?.id]);
 
@@ -207,7 +197,14 @@ export default function ArticleDetailPage() {
     setPerspectivesLoading(false);
   };
 
-  const handleOpenPerspectivesPage = () => setPage("perspectives");
+  const handleOpenPerspectivesPage = () => {
+    setPerspectivesHandoff({
+      article,
+      perspectives,
+      activeId: perspectiveActive,
+    });
+    setPage("perspectives");
+  };
 
   // Share
   const [shareMsg, setShareMsg] = useState("");
@@ -492,86 +489,6 @@ export default function ArticleDetailPage() {
                   </p>
                 </div>
               )}
-            </section>
-          )}
-
-          {/* ── Story Timeline (krushna's feature) ── */}
-          {(timelineLoading || storyTimeline) && (
-            <section className="mb-6">
-              <div className="flex items-center gap-2 mb-4">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-maroon">
-                  <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-                </svg>
-                <h3 className="font-playfair text-[19px] font-bold text-text-primary">Story Timeline</h3>
-              </div>
-              {timelineLoading ? (
-                <div className="bg-white rounded-card border border-gold-subtle p-5 animate-pulse">
-                  <div className="h-3 bg-smoke rounded w-1/2 mb-3" />
-                  {[1,2,3].map(i => (
-                    <div key={i} className="flex gap-3 mb-3">
-                      <div className="w-3 h-3 rounded-full bg-smoke flex-shrink-0 mt-1" />
-                      <div className="flex-1 h-4 bg-smoke rounded" />
-                    </div>
-                  ))}
-                </div>
-              ) : storyTimeline ? (
-                <div className="bg-white rounded-card border border-gold/40 shadow-card overflow-hidden">
-                  <div className="bg-gradient-to-r from-lemon to-white px-5 py-3.5 border-b border-gold/20 flex items-center justify-between">
-                    <div>
-                      <p className="text-[10px] font-bold uppercase tracking-[1.5px] text-gold-muted mb-0.5">🕒 Following This Story</p>
-                      <p className="text-[13px] font-semibold text-text-primary">{storyTimeline.title}</p>
-                    </div>
-                    <span className="text-[10px] font-bold bg-maroon/10 text-maroon px-2 py-1 rounded-full">
-                      {storyTimeline.articles?.filter(a => a.articleId?.title).length} events
-                    </span>
-                  </div>
-
-                  {/* Timeline events */}
-                  <div className="p-4">
-                    {storyTimeline.articles
-                      ?.filter(a => a.articleId?.title)
-                      .sort((a, b) => new Date(a.articleId.publishedAt) - new Date(b.articleId.publishedAt))
-                      .map((entry, i, arr) => {
-                        const a = entry.articleId;
-                        const isLast = i === arr.length - 1;
-                        const isCurrent = a._id?.toString() === article?.id?.toString() || a.id === article?.id;
-                        const eventColors = {
-                          Origin: "bg-maroon", Breaking: "bg-red-600",
-                          Update: "bg-gold", Outcome: "bg-green-500",
-                          Reaction: "bg-blue-400", Announced: "bg-purple-500",
-                        };
-                        const dotColor = eventColors[entry.eventLabel] || "bg-text-muted";
-                        return (
-                          <div key={a._id || i} className="flex gap-3 group">
-                            <div className="flex flex-col items-center flex-shrink-0">
-                              <div className={`w-3 h-3 rounded-full ${dotColor} ${isCurrent ? "ring-2 ring-offset-1 ring-maroon" : ""} mt-1 z-10`} />
-                              {!isLast && <div className="w-[1.5px] flex-1 bg-gold/20 mt-1 min-h-[24px]" />}
-                            </div>
-                            <div
-                              className={`flex-1 pb-3 cursor-pointer ${isCurrent ? "" : "hover:opacity-80 transition-opacity duration-200"}`}
-                              onClick={() => { if (!isCurrent) openArticle({ ...a, id: a._id || a.id }); }}
-                            >
-                              {isCurrent && (
-                                <span className="inline-block text-[9px] font-bold uppercase bg-maroon text-white px-1.5 py-0.5 rounded-[4px] mb-1">You are here</span>
-                              )}
-                              <div className="flex items-center gap-1.5 mb-0.5">
-                                {entry.eventLabel && <span className="text-[9px] font-bold text-text-muted uppercase tracking-[0.5px]">{entry.eventLabel}</span>}
-                                <span className="text-[10px] text-text-muted">·</span>
-                                <span className="text-[10px] text-text-muted">
-                                  {a.publishedAt ? new Date(a.publishedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : ""}
-                                </span>
-                              </div>
-                              <p className={`text-[13px] leading-[1.4] font-medium ${isCurrent ? "text-maroon" : "text-text-primary group-hover:text-maroon"} transition-colors duration-200`}>
-                                {a.title}
-                              </p>
-                              {!isLast && <div className="h-[6px]" />}
-                            </div>
-                          </div>
-                        );
-                      })}
-                  </div>
-                </div>
-              ) : null}
             </section>
           )}
 
