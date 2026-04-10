@@ -403,6 +403,8 @@ export const timelineAPI = {
   },
 
   // Req 3: get ALL articles from DB for the "Select Article" dropdown
+  dismissStory: (storyId) => request(`/timeline/story/${storyId}`, { method: "DELETE" }),
+
   getAllArticles: async (search = "") => {
     const q = search ? `?search=${encodeURIComponent(search)}` : "";
     const data = await request(`/timeline/all-articles${q}`);

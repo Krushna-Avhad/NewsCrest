@@ -52,6 +52,7 @@ export function AppProvider({ children }) {
   // Compare / prefs
   const [compareArticle, setCompareArticle] = useState(null);
   const [chatbotInitialQuery, setChatbotInitialQuery] = useState(null);
+  const [perspectivesHandoff, setPerspectivesHandoff] = useState(null); // { article, perspectives, activeId }
   const [readingPrefs, setReadingPrefs] = useState({
     language: "English",
     feedLayout: "Card Grid",
@@ -533,6 +534,8 @@ const loadPublicNews = async () => {
         openCompareWith,
         chatbotInitialQuery,
         setChatbotInitialQuery,
+        perspectivesHandoff,
+        setPerspectivesHandoff,
       }}
     >
       {children}

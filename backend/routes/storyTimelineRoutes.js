@@ -7,6 +7,7 @@ import {
   getStoriesForSavedArticles,
   followAStory,
   unfollowAStory,
+  dismissStory,
   processArticle,
   processBatch,
   getTrendingStories,
@@ -32,6 +33,7 @@ router.get("/all-articles",           getAllArticlesForDropdown);
 router.get("/history",                getUserHistory);
 router.post("/follow/:storyId",       followAStory);
 router.delete("/follow/:storyId",     unfollowAStory);
+router.delete("/story/:storyId",      dismissStory);
 router.post("/generate",              generateFromInput);
 router.post("/generate-from-history", generateFromHistory);
 router.post("/for-saved-articles",    getStoriesForSavedArticles);

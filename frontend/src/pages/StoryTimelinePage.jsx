@@ -134,9 +134,6 @@ function TimelineEvent({ entry, isLast, onArticleClick, isNew }) {
 // STORY DETAIL PANEL
 // ─────────────────────────────────────────────────────────────────────────────
 function StoryDetailPanel({ story, onBack, onArticleClick, userReadIds }) {
-  const [following, setFollowing] = useState(false);
-  const [followLoading, setFollowLoading] = useState(false);
-
   if (!story) return null;
 
   const articles = story.articles?.filter(a => a.articleId?.title) || [];
@@ -145,16 +142,6 @@ function StoryDetailPanel({ story, onBack, onArticleClick, userReadIds }) {
   );
   const isLocalFallback = story.isLocalFallback;
   const isManualInput   = story.isManualInput;
-
-  const handleFollow = async () => {
-    if (isLocalFallback || isManualInput) return;
-    setFollowLoading(true);
-    try {
-      following ? await timelineAPI.unfollow(story._id) : await timelineAPI.follow(story._id);
-      setFollowing(f => !f);
-    } catch (_) {}
-    setFollowLoading(false);
-  };
 
   return (
     <div className="panel-slide-up">
@@ -191,17 +178,7 @@ function StoryDetailPanel({ story, onBack, onArticleClick, userReadIds }) {
           </h2>
         </div>
 
-        {!isLocalFallback && !isManualInput && (
-          <button
-            onClick={handleFollow}
-            disabled={followLoading}
-            className={`flex-shrink-0 px-4 py-2 rounded-[10px] text-[12px] font-bold transition-all duration-200 cursor-pointer ${
-              following ? "bg-maroon text-white" : "bg-lemon text-gold-muted border border-gold/40 hover:bg-gold/15"
-            }`}
-          >
-            {followLoading ? "..." : following ? "✓ Following" : "+ Follow"}
-          </button>
-        )}
+
       </div>
 
       {/* Keywords */}
@@ -693,29 +670,41 @@ export default function StoryTimelinePage() {
   const [loading, setLoading]             = useState(true);
   const [selectedStory, setSelectedStory] = useState(null);
   const [showGenerator, setShowGenerator] = useState(false);
+  const [refreshing, setRefreshing]       = useState(false);
+  const prevSavedCountRef                 = useRef(0);
+  const retryTimerRef                     = useRef(null);
 
   const userReadIds = (user?.readingHistory || []).map(r => r.articleId?.toString());
 
   useEffect(() => { loadStories(); }, [user]);
 
-  // When saved articles change, fetch their timelines in ONE batch call
+  // Fetch timelines for all saved articles
+  const fetchSavedTimelines = async (ids) => {
+    if (!ids?.length) { setSavedStories([]); return; }
+    try {
+      const stories = await timelineAPI.getStoriesForSaved(ids);
+      setSavedStories(stories.map(s => ({ ...s, isSavedStory: true })));
+    } catch (_) {}
+  };
+
+  // When saved articles change, fetch their timelines.
+  // If count increased (new save), also retry after 5s — backend processes
+  // processArticleIntoTimeline asynchronously so timeline may not exist yet.
   useEffect(() => {
-    if (!savedArticles?.length) { setSavedStories([]); return; }
-    let cancelled = false;
-    const fetchSavedTimelines = async () => {
-      const ids = savedArticles
-        .map(a => a.id || a._id)
-        .filter(Boolean);
-      if (!ids.length) { setSavedStories([]); return; }
-      try {
-        const stories = await timelineAPI.getStoriesForSaved(ids);
-        if (!cancelled) setSavedStories(stories.map(s => ({ ...s, isSavedStory: true })));
-      } catch (_) {
-        if (!cancelled) setSavedStories([]);
-      }
-    };
-    fetchSavedTimelines();
-    return () => { cancelled = true; };
+    if (!savedArticles?.length) { setSavedStories([]); prevSavedCountRef.current = 0; return; }
+    const ids = savedArticles.map(a => a.id || a._id).filter(Boolean);
+    if (!ids.length) return;
+
+    fetchSavedTimelines(ids);
+
+    // If a new article was just saved, retry after 5s so backend has time to build timeline
+    if (savedArticles.length > prevSavedCountRef.current) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = setTimeout(() => fetchSavedTimelines(ids), 5000);
+    }
+    prevSavedCountRef.current = savedArticles.length;
+
+    return () => clearTimeout(retryTimerRef.current);
   }, [savedArticles]);
 
   const loadStories = async () => {
@@ -729,10 +718,32 @@ export default function StoryTimelinePage() {
     setLoading(false);
   };
 
-  // Remove a story from either list
-  const handleDeleteStory = (storyId) => {
+  // Manual refresh — re-fetches both myStories and savedStories from scratch
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      const ids = savedArticles.map(a => a.id || a._id).filter(Boolean);
+      await Promise.all([
+        loadStories(),
+        fetchSavedTimelines(ids),
+      ]);
+    } catch (_) {}
+    setRefreshing(false);
+  };
+
+  // Remove a story — optimistic update + persist dismiss to backend
+  const handleDeleteStory = async (storyId) => {
+    // Optimistic: remove from UI immediately
     setMyStories(prev => prev.filter(s => s._id !== storyId));
     setSavedStories(prev => prev.filter(s => s._id !== storyId));
+    // Persist to backend so it stays dismissed after refresh
+    try {
+      await timelineAPI.dismissStory(storyId);
+    } catch (_) {
+      // If backend fails, re-fetch to restore consistent state
+      const ids = savedArticles.map(a => a.id || a._id).filter(Boolean);
+      await Promise.all([loadStories(), fetchSavedTimelines(ids)]);
+    }
   };
 
   const handleOpenStory = async (story) => {
@@ -821,11 +832,27 @@ export default function StoryTimelinePage() {
             {user ? "Threads based on your reading activity" : "Sign in to see your personalised story threads"}
           </p>
         </div>
-        {(() => {
-          const myIds = new Set(myStories.map(s => s._id?.toString()));
-          const total = myStories.length + savedStories.filter(s => !myIds.has(s._id?.toString())).length;
-          return total > 0 ? <span className="text-[11px] text-text-muted">{total} active threads</span> : null;
-        })()}
+        <div className="flex items-center gap-3">
+          {(() => {
+            const myIds = new Set(myStories.map(s => s._id?.toString()));
+            const total = myStories.length + savedStories.filter(s => !myIds.has(s._id?.toString())).length;
+            return total > 0 ? <span className="text-[11px] text-text-muted">{total} active threads</span> : null;
+          })()}
+          {user && (
+            <button
+              onClick={handleRefresh}
+              disabled={refreshing}
+              title="Refresh timelines"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-[8px] text-[11px] font-semibold text-text-muted hover:text-maroon hover:bg-smoke border border-gold/20 transition-all duration-200 cursor-pointer disabled:opacity-40"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={refreshing ? "animate-spin" : ""}>
+                <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+              </svg>
+              {refreshing ? "Refreshing…" : "Refresh"}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Sign-in state */}

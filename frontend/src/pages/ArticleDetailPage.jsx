@@ -91,6 +91,7 @@ export default function ArticleDetailPage() {
     headlines,
     setChatbotInitialQuery,
     setPage,
+    setPerspectivesHandoff,
   } = useApp();
 
   const article = activeArticle;
@@ -196,7 +197,14 @@ export default function ArticleDetailPage() {
     setPerspectivesLoading(false);
   };
 
-  const handleOpenPerspectivesPage = () => setPage("perspectives");
+  const handleOpenPerspectivesPage = () => {
+    setPerspectivesHandoff({
+      article,
+      perspectives,
+      activeId: perspectiveActive,
+    });
+    setPage("perspectives");
+  };
 
   // Share
   const [shareMsg, setShareMsg] = useState("");

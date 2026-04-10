@@ -13,6 +13,7 @@ import {
 import User from "../models/User.js";
 import News from "../models/News.js";
 import StoryTimeline from "../models/StoryTimeline.js";
+import mongoose from "mongoose";
 import UserActivity from "../models/UserActivity.js";
 // getAllArticlesForDropdown is defined in this file and uses News directly
 
@@ -21,10 +22,26 @@ export const getMyStories = async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
     if (!user) return res.status(404).json({ error: "User not found" });
-    const stories = await getStoriesForUser(user, 8);
-    res.json({ stories });
+    const dismissedIds = new Set((user.dismissedStories || []).map(id => id.toString()));
+    const stories = await getStoriesForUser(user, 20);
+    const filtered = stories.filter(s => !dismissedIds.has(s._id?.toString()));
+    res.json({ stories: filtered });
   } catch (err) {
     console.error("getMyStories error:", err.message);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// ── DELETE /api/timeline/story/:storyId ──────────────────────────────────────
+// Dismiss a story from this user's timeline view (does not delete the story itself)
+export const dismissStory = async (req, res) => {
+  try {
+    const { storyId } = req.params;
+    await User.findByIdAndUpdate(req.user.id, {
+      $addToSet: { dismissedStories: storyId }
+    });
+    res.json({ success: true });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
@@ -59,13 +76,22 @@ export const getStoriesForSavedArticles = async (req, res) => {
     const { articleIds } = req.body;
     if (!articleIds?.length) return res.json({ stories: [] });
 
+    // Cast string IDs to ObjectId so MongoDB $in matches correctly
+    const objectIds = articleIds
+      .filter(id => mongoose.Types.ObjectId.isValid(id))
+      .map(id => new mongoose.Types.ObjectId(id));
+
+    if (!objectIds.length) return res.json({ stories: [] });
+
+    const user = await User.findById(req.user.id).select("dismissedStories");
+    const dismissedIds = new Set((user?.dismissedStories || []).map(id => id.toString()));
+
     const stories = await StoryTimeline.find({
       isActive: true,
-      "articles.articleId": { $in: articleIds },
-      $expr: { $gt: [{ $size: "$articles" }, 1] },
+      "articles.articleId": { $in: objectIds },
     })
       .sort({ lastUpdatedAt: -1 })
-      .limit(15)
+      .limit(30)
       .populate({
         path: "articles.articleId",
         model: "News",
@@ -78,7 +104,7 @@ export const getStoriesForSavedArticles = async (req, res) => {
         obj.articles = obj.articles.filter(a => a.articleId?.title);
         return obj;
       })
-      .filter(s => s.articles.length >= 2);
+      .filter(s => s.articles.length >= 1 && !dismissedIds.has(s._id?.toString()));
 
     res.json({ stories: cleaned });
   } catch (err) {

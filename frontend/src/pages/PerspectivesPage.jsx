@@ -241,7 +241,7 @@ function PersonaCard({ persona, isActive, onClick }) {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function PerspectivesPage() {
-  const { } = useApp();
+  const { perspectivesHandoff, setPerspectivesHandoff } = useApp();
 
   // Article selector state
   const [allArticles, setAllArticles]         = useState([]);
@@ -255,12 +255,18 @@ export default function PerspectivesPage() {
   const [activeId, setActiveId]             = useState(null);
   const [hasSearched, setHasSearched]       = useState(false);
 
-  // Load all articles on mount
+  // Load all articles on mount + consume handoff if navigated from article page
   useEffect(() => {
+    // If we arrived via "Open Full Perspectives View", pre-populate everything
+    if (perspectivesHandoff) {
+      setSelectedArticle(perspectivesHandoff.article);
+      setPerspectives(perspectivesHandoff.perspectives || []);
+      setActiveId(perspectivesHandoff.activeId || perspectivesHandoff.perspectives?.[0]?.id || null);
+      setHasSearched(true);
+      setPerspectivesHandoff(null); // consume and clear
+    }
     timelineAPI.getAllArticles("")
-      .then(items => {
-        setAllArticles(items || []);
-      })
+      .then(items => setAllArticles(items || []))
       .catch(() => setAllArticles([]))
       .finally(() => setArticlesLoading(false));
   }, []);
@@ -283,7 +289,7 @@ export default function PerspectivesPage() {
     try {
       const result = await perspectiveAPI.generate({
         title:       selectedArticle.title,
-        description: selectedArticle.description || "",
+        description: selectedArticle.description || selectedArticle.summary || "",
         category:    selectedArticle.category    || "",
       });
       setPerspectives(result || []);
@@ -341,7 +347,7 @@ export default function PerspectivesPage() {
                   </span>
                 )}
                 {selectedArticle.source && (
-                  <span className="text-[10px] text-text-muted">· {selectedArticle.source}</span>
+                  <span className="text-[10px] text-text-muted">· {typeof selectedArticle.source === "object" ? selectedArticle.source?.name : selectedArticle.source}</span>
                 )}
                 {selectedArticle.publishedAt && (
                   <span className="text-[10px] text-text-muted">
