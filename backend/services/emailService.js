@@ -24,6 +24,22 @@ function getTransporter() {
   });
 }
 
+// ── Retry helper — exponential backoff ✅ ADDED ───────────────────────────────
+async function withRetry(fn, maxAttempts = 3, label = "email") {
+  let lastError;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      const waitMs = Math.pow(2, attempt) * 500; // 1s, 2s, 4s
+      console.warn(`⚠️  ${label} attempt ${attempt}/${maxAttempts} failed: ${err.message}. Retrying in ${waitMs}ms...`);
+      if (attempt < maxAttempts) await new Promise(r => setTimeout(r, waitMs));
+    }
+  }
+  throw lastError;
+}
+
 // ── Verify on startup ────────────────────────────────────────────────────────
 export function verifyEmailConnection() {
   if (!isEmailConfigured()) {
@@ -90,12 +106,12 @@ export const sendOtpEmail = async (email, otp) => {
     <p style="color:#777;font-size:14px;">⏳ Valid for <strong>10 minutes</strong>. Do not share it with anyone.</p>
     <p>If you did not create an account, please ignore this email.</p>
   `;
-  await getTransporter().sendMail({
+  await withRetry(() => getTransporter().sendMail({
     from:    `"NewsCrest" <${process.env.EMAIL_USER?.trim()}>`,
     to:      email,
     subject: "🔐 Your NewsCrest Verification OTP",
     html:    emailWrapper(body),
-  });
+  }), 3, `OTP to ${email}`);
   console.log(`✅ OTP email sent to ${email}`);
 };
 
@@ -112,12 +128,12 @@ export const sendNewsAlertEmail = async (email, newsData) => {
     <p style="color:#555;line-height:1.7;">${description}</p>
     ${link ? `<a href="${link}" class="btn">Read Full Story →</a>` : ""}
   `;
-  await getTransporter().sendMail({
+  await withRetry(() => getTransporter().sendMail({
     from:    `"NewsCrest Alerts" <${process.env.EMAIL_USER?.trim()}>`,
     to:      email,
     subject: `📰 NewsCrest: ${title}`,
     html:    emailWrapper(body),
-  });
+  }), 3, `newsAlert to ${email}`);
   console.log(`✅ Alert email sent to ${email}`);
 };
 
@@ -180,11 +196,11 @@ export const sendDigestEmail = async (email, articles, options = {}) => {
     ${articlesHtml}
   `;
 
-  await getTransporter().sendMail({
+  await withRetry(() => getTransporter().sendMail({
     from:    `"NewsCrest" <${process.env.EMAIL_USER?.trim()}>`,
     to:      email,
     subject,
     html:    emailWrapper(body),
-  });
+  }), 3, `digest to ${email}`);
   console.log(`✅ Digest email (${articles.length} articles) sent to ${email}`);
 };

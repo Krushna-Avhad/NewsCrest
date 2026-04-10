@@ -5,7 +5,7 @@ import { groqCall, groqCallPriority, trackTokens } from "../utils/groqRateLimite
 
 dotenv.config();
 
-// Initialize Groq
+// ── Groq (your key — stored as GEMINI_API_KEY) ───────────────────────────────
 const groq = new Groq({ apiKey: process.env.GEMINI_API_KEY });
 
 // ── Groq helper ──────────────────────────────────────────────────────────────
@@ -24,21 +24,24 @@ async function callGroq(prompt, maxTokens = 300, priority = false, label = "") {
   return priority ? groqCallPriority(fn, label) : groqCall(fn, label);
 }
 
-// ── JSON parser ──────────────────────────────────────────────────────────────
-const parseAIJSON = (text) => {
+// Compare logic lives in compareService.js
+
+// ── JSON parsers ──────────────────────────────────────────────────────────────
+function parseAIJSON(text) {
   try {
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error("No JSON object found in AI response");
-    return JSON.parse(jsonMatch[0].trim());
+    const clean = text.replace(/```json\s*/gi, "").replace(/```/g, "").trim();
+    const match = clean.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error("No JSON object found");
+    return JSON.parse(match[0]);
   } catch (err) {
-    console.error("AI JSON Parsing Error. Raw Text:", text);
+    console.error("AI JSON Parsing Error:", err.message);
     return {
       reply: "I understood your request, but I'm having trouble formatting the news right now.",
       searchKeywords: [],
       categorySuggestion: "General"
     };
   }
-};
+}
 
 // ── Mock fallbacks ────────────────────────────────────────────────────────────
 function mockSummary(text) {
@@ -61,7 +64,7 @@ function mockHatke(title, content) {
   return "Breaking: Something happened somewhere. Experts have opinions. Twitter is already fighting about it 🔥";
 }
 
-// ── AI Methods ───────────────────────────────────────────────────────────────
+// mockCompare moved to compareService.js
 
 export const summarizeNews = async (text, articleId = null) => {
   if (!text) return "No content available to summarize.";
@@ -94,6 +97,7 @@ export const summarizeNews = async (text, articleId = null) => {
   }
 };
 
+// YOUR MODULE — uses Groq (GEMINI_API_KEY)
 export const generateHatkeSummary = async (title, content) => {
   try {
     const prompt = `You are a witty Indian news reporter with Gen-Z energy.
@@ -112,6 +116,7 @@ Only return the 2-line summary, nothing else.`;
   }
 };
 
+// YOUR MODULE — uses Groq (GEMINI_API_KEY)
 export const explainSimply = async (title, content) => {
   try {
     const prompt = `Explain this news story as if I am a 10-year-old. Use very simple terms and be brief (2-3 lines):
@@ -124,33 +129,9 @@ Content: ${(content || "").substring(0, 1000)}`;
   }
 };
 
-export const compareNews = async (item1, item2) => {
-  try {
-    const prompt = `Compare these two news articles and output ONLY a raw JSON object with this structure:
-{
-  "similarities": [{"aspect": "string", "description": "string"}],
-  "differences": [{"aspect": "string", "description": "string"}],
-  "insights": [{"type": "key_takeaway", "content": "string", "importance": "high"}],
-  "overallScore": 0.65,
-  "sentiment": {"item1": "neutral", "item2": "neutral", "comparison": "similar_sentiment"}
-}
+// compareNews moved to compareService.js
 
-Article 1: ${item1.title} - ${(item1.content || "").substring(0, 500)}
-Article 2: ${item2.title} - ${(item2.content || "").substring(0, 500)}`;
-    const text = await callGroq(prompt, 500);
-    return parseAIJSON(text);
-  } catch (err) {
-    console.warn("compareNews Groq failed, using mock:", err.message);
-    return {
-      similarities: [{ aspect: "relevance", description: "Both cover significant current events with broad public impact" }],
-      differences: [{ aspect: "focus", description: `"${item1.title?.slice(0, 40)}..." takes a different angle than "${item2.title?.slice(0, 40)}..."` }],
-      insights: [{ type: "key_takeaway", content: "Both stories reflect important ongoing developments worth following closely", importance: "high" }],
-      overallScore: 0.55,
-      sentiment: { item1: "neutral", item2: "neutral", comparison: "similar_sentiment" }
-    };
-  }
-};
-
+// YOUR MODULE — uses Groq (GEMINI_API_KEY)
 export const processChatbotQuery = async (query, user) => {
   try {
     const city = user?.city || "India";
@@ -265,30 +246,20 @@ export const searchNews = async (keywords, user) => {
     if (!keywords || keywords.trim() === "") {
       return await News.find().sort({ publishedAt: -1 }).limit(limit);
     }
-
     const safeKeywords = keywords.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
     let query = {
       $or: [
         { title:   { $regex: safeKeywords, $options: "i" } },
         { content: { $regex: safeKeywords, $options: "i" } }
       ]
     };
-
     if (user?.interests?.length > 0) {
       query = {
-        $and: [
-          { $or: query.$or },
-          { category: { $in: user.interests } }
-        ]
+        $and: [{ $or: query.$or }, { category: { $in: user.interests } }]
       };
     }
-
     const results = await News.find(query).sort({ publishedAt: -1 }).limit(limit);
-    if (results.length === 0) {
-      return await News.find().sort({ publishedAt: -1 }).limit(5);
-    }
-    return results;
+    return results.length ? results : await News.find().sort({ publishedAt: -1 }).limit(5);
   } catch (error) {
     console.error("Database Search Error:", error);
     return await News.find().sort({ publishedAt: -1 }).limit(3);

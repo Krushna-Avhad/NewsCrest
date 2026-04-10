@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 const alertSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   articleId: { type: mongoose.Schema.Types.ObjectId, ref: 'News', required: true },
+  articleUrl: { type: String, default: "" },  // ✅ FIX: store article URL for frontend navigation
   type: { 
     type: String, 
     enum: ['breaking', 'personalized', 'location', 'interest', 'trending', 'daily_digest'],

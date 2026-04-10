@@ -53,7 +53,7 @@ export function AppProvider({ children }) {
   const [compareArticle, setCompareArticle] = useState(null);
   const [chatbotInitialQuery, setChatbotInitialQuery] = useState(null);
   const [perspectivesHandoff, setPerspectivesHandoff] = useState(null); // { article, perspectives, activeId }
-  const [readingPrefs, setReadingPrefs] = useState({
+  const [readingPrefs] = useState({
     language: "English",
     feedLayout: "Card Grid",
     textSize: "Medium",
@@ -73,6 +73,12 @@ export function AppProvider({ children }) {
         .then((data) => {
           // getProfile returns the user object directly (no wrapper)
           setUser(data);
+          // ✅ FIXED: seed reading prefs from DB on auto-login
+          setReadingPrefsRaw({
+            language: data.language || "English",
+            feedLayout: data.feedLayout || "Card Grid",
+            textSize: data.textSize || "Medium",
+          });
         })
         .catch(() => {
           // Token expired / invalid — clear it
@@ -250,6 +256,12 @@ const loadPublicNews = async () => {
         const data = await authAPI.login(email, password);
         // login returns { token, user }
         setUser(data.user);
+        // ✅ FIXED: seed reading prefs from DB on login
+        setReadingPrefsRaw({
+          language: data.user.language || "English",
+          feedLayout: data.user.feedLayout || "Card Grid",
+          textSize: data.user.textSize || "Medium",
+        });
         setPage("dashboard");
         // Reload alerts after a short delay — backend processes notifications
         // asynchronously after login, so we wait 2s before fetching
@@ -297,6 +309,12 @@ const loadPublicNews = async () => {
         const data = await authAPI.verifyOtp(email, otp);
         // verifyOtp returns { token, user, message }
         setUser(data.user);
+        // ✅ FIXED: seed reading prefs from DB after OTP verify
+        setReadingPrefsRaw({
+          language: data.user.language || "English",
+          feedLayout: data.user.feedLayout || "Card Grid",
+          textSize: data.user.textSize || "Medium",
+        });
         setPendingOtpEmail(null);
         setPage("dashboard");
         // Reload alerts after backend processes first-login notifications
@@ -343,6 +361,29 @@ const loadPublicNews = async () => {
     setUser(data.user || data);
     // Reload personalised feed with updated interests/profile
     await loadPersonalisedFeed();
+    return data;
+  }, []);
+
+  // ✅ ADDED: setReadingPrefs persists to DB (fire-and-forget) + updates local state
+  const setReadingPrefs = useCallback((updater) => {
+    setReadingPrefsRaw((prev) => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      // Persist to backend without blocking UI
+      authAPI.updatePreferences({
+        textSize: next.textSize,
+        language: next.language,
+        feedLayout: next.feedLayout,
+      }).then((data) => {
+        // Keep user object in sync with saved prefs
+        if (data?.user) setUser(data.user);
+      }).catch(() => {});
+      return next;
+    });
+  }, []);
+
+  // ✅ ADDED: change password — validates old, hashes new on backend
+  const changePassword = useCallback(async ({ oldPassword, newPassword }) => {
+    const data = await authAPI.changePassword({ oldPassword, newPassword });
     return data;
   }, []);
 
@@ -502,6 +543,7 @@ const loadPublicNews = async () => {
         pendingOtpEmail,
         logout,
         updateProfile,
+        changePassword,
         headlines,
         feedArticles,
         trendingArticles,

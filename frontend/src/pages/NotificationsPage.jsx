@@ -37,7 +37,7 @@ export default function NotificationsPage() {
   const {
     alerts, alertCount,
     markAlertRead, markAllAlertsRead, deleteAlert, loadAlerts,
-    user,
+    user, openArticle, allArticles,
   } = useApp();
 
   const emailSentCount = alerts.filter((a) => a.isEmailSent).length;
@@ -117,7 +117,44 @@ export default function NotificationsPage() {
                     {/* Body */}
                     <div
                       className="flex-1 min-w-0 cursor-pointer"
-                      onClick={() => markAlertRead(id)}
+                      onClick={() => {
+                        markAlertRead(id);
+                        // ✅ FIX: open article inside the app (React route /news/:id)
+                        // n.articleId is populated by the backend with full article fields
+                        const populated = n.articleId && typeof n.articleId === "object" ? n.articleId : null;
+                        const articleId = populated?._id || n.articleId;
+
+                        if (populated?._id) {
+                          // Best case: backend populated the article — open directly
+                          openArticle({
+                            _id: populated._id,
+                            id:  populated._id,
+                            title:     populated.title     || n.title,
+                            url:       populated.url       || n.articleUrl || "",
+                            category:  populated.category  || n.metadata?.category || "",
+                            source:    populated.source    || "",
+                            imageUrl:  populated.imageUrl  || "",
+                            publishedAt: populated.publishedAt || n.createdAt,
+                          });
+                        } else if (articleId) {
+                          // Fallback: find in already-loaded articles list
+                          const found = allArticles?.find(
+                            (a) => (a._id || a.id)?.toString() === articleId?.toString()
+                          );
+                          if (found) {
+                            openArticle(found);
+                          } else {
+                            // Last resort: open with minimal stub — detail page fetches the rest
+                            openArticle({
+                              _id: articleId,
+                              id:  articleId,
+                              title: n.title,
+                              url:   n.articleUrl || "",
+                              category: n.metadata?.category || "",
+                            });
+                          }
+                        }
+                      }}
                     >
                       <div className="flex items-center gap-2 mb-0.5 flex-wrap">
                         <span className={`text-[10px] font-bold uppercase tracking-[0.5px] ${t.color}`}>

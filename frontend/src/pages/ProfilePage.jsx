@@ -54,6 +54,7 @@ export default function ProfilePage() {
     setReadingPrefs,
     user,
     updateProfile,
+    changePassword,
     logout,
     savedArticles,
     notes,
@@ -75,14 +76,15 @@ export default function ProfilePage() {
   const [showConfirmPass, setShowConfirmPass] = useState(false);
   const [passForm, setPassForm] = useState({ old: "", newP: "", confirm: "" });
   const [passSaved, setPassSaved] = useState(false);
+  const [passError, setPassError] = useState(""); // ✅ ADDED
 
-  const [notifState, setNotifState] = useState({
+  // ✅ FIXED: use user as source of truth for notification state (syncs after save)
+  const [notifState, setNotifState] = useState(() => ({
     breakingNews: user?.notificationPreferences?.breakingNews ?? true,
-    personalizedAlerts:
-      user?.notificationPreferences?.personalizedAlerts ?? true,
+    personalizedAlerts: user?.notificationPreferences?.personalizedAlerts ?? true,
     dailyDigest: user?.notificationPreferences?.dailyDigest ?? false,
     emailAlerts: user?.notificationPreferences?.emailAlerts ?? true,
-  });
+  }));
 
   const toggleInterest = (i) =>
     setEditForm((f) => ({
@@ -109,14 +111,31 @@ export default function ProfilePage() {
     setSavingProfile(false);
   };
 
-  const handleSavePassword = () => {
-    if (passForm.newP && passForm.newP === passForm.confirm) {
+  // ✅ FIXED: calls backend, validates old password, hashes new password
+  const handleSavePassword = async () => {
+    setPassError("");
+    if (!passForm.old) {
+      setPassError("Please enter your current password.");
+      return;
+    }
+    if (!passForm.newP || passForm.newP.length < 6) {
+      setPassError("New password must be at least 6 characters.");
+      return;
+    }
+    if (passForm.newP !== passForm.confirm) {
+      setPassError("New passwords do not match.");
+      return;
+    }
+    try {
+      await changePassword({ oldPassword: passForm.old, newPassword: passForm.newP });
       setPassSaved(true);
       setTimeout(() => {
         setPassSaved(false);
         setShowPassForm(false);
         setPassForm({ old: "", newP: "", confirm: "" });
       }, 2000);
+    } catch (err) {
+      setPassError(err.message || "Failed to change password.");
     }
   };
 
@@ -393,6 +412,9 @@ export default function ProfilePage() {
                     {passSaved ? "✓ Saved!" : "Update Password"}
                   </Button>
                 </div>
+                {passError && (
+                  <p className="text-[12px] text-red-600 mt-1">{passError}</p>
+                )}
               </div>
             ) : (
               <div className="px-5 py-4 text-[13.5px] text-text-muted">

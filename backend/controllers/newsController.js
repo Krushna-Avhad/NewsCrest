@@ -8,53 +8,47 @@ import { summarizeNews, filterNewsAdvanced } from "../services/aiService.js";
 import { processChatbotQuery } from "../services/aiService.js";
 import User from "../models/User.js";
 import News from "../models/News.js";
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import { recordUserActivity } from "../services/storyTimelineService.js";
+import Groq from "groq-sdk";
+import { recordUserActivity, processArticleIntoTimeline } from "../services/storyTimelineService.js";
 
-// 1. INITIALIZE Gemini (Do this at the TOP)
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+// Initialize Groq
+const groq = new Groq({ apiKey: process.env.GROK_API_KEY });
 
-// 2. HELPER FUNCTION (Define this before the controller uses it)
-async function processWithGemini(query) {
+// Chat helper using Groq
+async function processWithGroq(query) {
   try {
-    // Try the standard model name first
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const prompt = `You are NewsCrest AI. 
+- If the user is GREETING you or asking WHO YOU ARE, set "isNewsQuery": false.
+- If the user is asking for NEWS or specific TOPICS, set "isNewsQuery": true.
 
-    const prompt = `
-      You are NewsCrest AI. 
-      - If the user is GREETING you or asking WHO YOU ARE, set "isNewsQuery": false.
-      - If the user is asking for NEWS or specific TOPICS, set "isNewsQuery": true.
-  
-      User message: "${query}"
-  
-      Respond ONLY in JSON:
-      {
-      "isNewsQuery": boolean,
-      "keywords": "search terms",
-      "text": "your response"
-      }
-    `;
+User message: "${query}"
 
-    const result = await model.generateContent(prompt);
-    const responseText = result.response.text();
-    
-    // Safety check for empty or malformed AI response
-    if (!responseText) throw new Error("Empty AI response");
+Respond ONLY in JSON:
+{
+"isNewsQuery": boolean,
+"keywords": "search terms",
+"text": "your response"
+}`;
 
-    const cleanedJson = responseText.replace(/```json|```/g, "").trim();
+    const response = await groq.chat.completions.create({
+      model: "llama-3.1-8b-instant",
+      messages: [{ role: "user", content: prompt }],
+      max_tokens: 200,
+    });
+
+    const raw = response.choices[0]?.message?.content?.trim() || "";
+    if (!raw) throw new Error("Empty AI response");
+    const cleanedJson = raw.replace(/```json|```/g, "").trim();
     return JSON.parse(cleanedJson);
   } catch (error) {
-    // 429 Quota or 404 Error Fallback
-    const greetings = ['hi', 'hello', 'who are you', 'what is this'];
+    const greetings = ["hi", "hello", "who are you", "what is this"];
     const isGreeting = greetings.some(g => query.toLowerCase().includes(g));
-    
-
-    return { 
-      isNewsQuery: !isGreeting, // If it's a greeting, don't search news
-      keywords: query, 
-      text: isGreeting 
-        ? "I am NewsCrest AI! I can help you find the latest news. What are you interested in today?" 
-        : `I'm checking our archives for "${query}"...`
+    return {
+      isNewsQuery: !isGreeting,
+      keywords: query,
+      text: isGreeting
+        ? "I am NewsCrest AI! I can help you find the latest news. What are you interested in today?"
+        : `I'm checking our archives for "${query}"...`,
     };
   }
 }
@@ -581,7 +575,11 @@ export const saveArticle = async (req, res) => {
 
     // Persist rich snapshot for timeline generation (non-blocking)
     const savedArticle = await News.findById(articleId);
-    if (savedArticle) recordUserActivity(userId, "saved", savedArticle).catch(() => {});
+    if (savedArticle) {
+      recordUserActivity(userId, "saved", savedArticle).catch(() => {});
+      // Add to story timeline so updates appear on the Story Timeline page
+      processArticleIntoTimeline(savedArticle).catch(() => {});
+    }
 
     res.json({ message: "Article saved successfully" });
   } catch (err) {
