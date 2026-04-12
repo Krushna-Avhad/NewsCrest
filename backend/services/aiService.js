@@ -1,39 +1,44 @@
 import dotenv from "dotenv";
 import News from "../models/News.js";
 import Groq from "groq-sdk";
+import { groqCall, groqCallPriority, trackTokens } from "../utils/groqRateLimiter.js";
 
 dotenv.config();
 
-// ── Groq (your key — stored as GEMINI_API_KEY) ───────────────────────────────
+// Initialize Groq
 const groq = new Groq({ apiKey: process.env.GEMINI_API_KEY });
 
-async function callGroq(prompt, maxTokens = 300) {
-  const response = await groq.chat.completions.create({
-    model: "llama-3.1-8b-instant",
-    messages: [{ role: "user", content: prompt }],
-    max_tokens: maxTokens,
-  });
-  return response.choices[0]?.message?.content?.trim() || "";
+// ── Groq helper ──────────────────────────────────────────────────────────────
+async function callGroq(prompt, maxTokens = 300, priority = false, label = "") {
+  const fn = async () => {
+    const response = await groq.chat.completions.create({
+      model: "llama-3.1-8b-instant",
+      messages: [{ role: "user", content: prompt }],
+      max_tokens: maxTokens,
+    });
+    // Track token usage to stay under 12,000/min budget
+    const tokens = response.usage?.total_tokens || maxTokens;
+    trackTokens(tokens);
+    return response.choices[0]?.message?.content?.trim() || "";
+  };
+  return priority ? groqCallPriority(fn, label) : groqCall(fn, label);
 }
 
-// Compare logic lives in compareService.js
-
-// ── JSON parsers ──────────────────────────────────────────────────────────────
-function parseAIJSON(text) {
+// ── JSON parser ──────────────────────────────────────────────────────────────
+const parseAIJSON = (text) => {
   try {
-    const clean = text.replace(/```json\s*/gi, "").replace(/```/g, "").trim();
-    const match = clean.match(/\{[\s\S]*\}/);
-    if (!match) throw new Error("No JSON object found");
-    return JSON.parse(match[0]);
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) throw new Error("No JSON object found in AI response");
+    return JSON.parse(jsonMatch[0].trim());
   } catch (err) {
-    console.error("AI JSON Parsing Error:", err.message);
+    console.error("AI JSON Parsing Error. Raw Text:", text);
     return {
       reply: "I understood your request, but I'm having trouble formatting the news right now.",
       searchKeywords: [],
       categorySuggestion: "General"
     };
   }
-}
+};
 
 // ── Mock fallbacks ────────────────────────────────────────────────────────────
 function mockSummary(text) {
@@ -56,31 +61,30 @@ function mockHatke(title, content) {
   return "Breaking: Something happened somewhere. Experts have opinions. Twitter is already fighting about it 🔥";
 }
 
-// mockCompare moved to compareService.js
+// ── AI Methods ───────────────────────────────────────────────────────────────
 
-// ── AI Methods ────────────────────────────────────────────────────────────────
-
-// YOUR MODULE — uses Groq (GEMINI_API_KEY)
 export const summarizeNews = async (text, articleId = null) => {
   if (!text) return "No content available to summarize.";
 
-  // Cache check — return from DB if already summarized
+  // ✅ Cache check — if already summarized, return from DB for free
   if (articleId) {
     try {
       const existing = await News.findById(articleId).select("aiGenerated.summary");
-      if (existing?.aiGenerated?.summary) return existing.aiGenerated.summary;
-    } catch (_) {}
+      if (existing?.aiGenerated?.summary) {
+        return existing.aiGenerated.summary; // Zero Groq calls
+      }
+    } catch (_) {} // non-critical, proceed to generate
   }
 
   try {
     const prompt = `Summarize this news article in 2-3 concise bullet points:\n\n${text.substring(0, 2000)}`;
-    const summary = await callGroq(prompt, 300);
+    const summary = await callGroq(prompt, 300, false, "summarize");
 
-    // Persist to DB so future calls are free
+    // ✅ Persist to DB so future calls are free
     if (articleId) {
       News.findByIdAndUpdate(articleId, {
         $set: { "aiGenerated.summary": summary }
-      }).catch(() => {});
+      }).catch(() => {}); // non-blocking, don't await
     }
 
     return summary;
@@ -90,7 +94,6 @@ export const summarizeNews = async (text, articleId = null) => {
   }
 };
 
-// YOUR MODULE — uses Groq (GEMINI_API_KEY)
 export const generateHatkeSummary = async (title, content) => {
   try {
     const prompt = `You are a witty Indian news reporter with Gen-Z energy.
@@ -102,55 +105,154 @@ Title: ${title}
 Summary: ${(content || "").substring(0, 300)}
 
 Only return the 2-line summary, nothing else.`;
-    return await callGroq(prompt, 150);
+    return await callGroq(prompt, 150, true, "hatke"); // priority = true
   } catch (err) {
     console.warn("generateHatkeSummary Groq failed, using mock:", err.message);
     return mockHatke(title, content);
   }
 };
 
-// YOUR MODULE — uses Groq (GEMINI_API_KEY)
 export const explainSimply = async (title, content) => {
   try {
     const prompt = `Explain this news story as if I am a 10-year-old. Use very simple terms and be brief (2-3 lines):
 Title: ${title}
 Content: ${(content || "").substring(0, 1000)}`;
-    return await callGroq(prompt, 300);
+    return await callGroq(prompt, 300, true, "explain"); // priority = true — user triggered
   } catch (err) {
     console.warn("explainSimply Groq failed, using mock:", err.message);
     return `${title} — This is an important story that affects many people.`;
   }
 };
 
-// compareNews moved to compareService.js
+export const compareNews = async (item1, item2) => {
+  try {
+    const prompt = `Compare these two news articles and output ONLY a raw JSON object with this structure:
+{
+  "similarities": [{"aspect": "string", "description": "string"}],
+  "differences": [{"aspect": "string", "description": "string"}],
+  "insights": [{"type": "key_takeaway", "content": "string", "importance": "high"}],
+  "overallScore": 0.65,
+  "sentiment": {"item1": "neutral", "item2": "neutral", "comparison": "similar_sentiment"}
+}
 
-// YOUR MODULE — uses Groq (GEMINI_API_KEY)
+Article 1: ${item1.title} - ${(item1.content || "").substring(0, 500)}
+Article 2: ${item2.title} - ${(item2.content || "").substring(0, 500)}`;
+    const text = await callGroq(prompt, 500);
+    return parseAIJSON(text);
+  } catch (err) {
+    console.warn("compareNews Groq failed, using mock:", err.message);
+    return {
+      similarities: [{ aspect: "relevance", description: "Both cover significant current events with broad public impact" }],
+      differences: [{ aspect: "focus", description: `"${item1.title?.slice(0, 40)}..." takes a different angle than "${item2.title?.slice(0, 40)}..."` }],
+      insights: [{ type: "key_takeaway", content: "Both stories reflect important ongoing developments worth following closely", importance: "high" }],
+      overallScore: 0.55,
+      sentiment: { item1: "neutral", item2: "neutral", comparison: "similar_sentiment" }
+    };
+  }
+};
+
 export const processChatbotQuery = async (query, user) => {
   try {
-    const prompt = `
-You are an AI News Assistant. 
-User Location: ${user?.city || "India"}, ${user?.state || "Unknown"}
-User Interests: ${user?.interests?.join(", ") || "General News"}
+    const city = user?.city || "India";
+    const q    = (query || "").trim();
+    const lc   = q.toLowerCase();
 
-The user asked: "${query}"
+    // ── Greetings ──────────────────────────────────────────────────────────
+    const greetWords = ["hi", "hello", "hey", "who are you", "what are you"];
+    if (greetWords.some(g => lc.includes(g)) && lc.length < 40) {
+      return {
+        reply: `Hi! I'm NewsCrest AI 👋 Ask me about any news topic, or paste an article title and I'll explain it for you.`,
+        articles: [],
+      };
+    }
 
-CRITICAL: Extract search keywords and respond ONLY with this JSON format (no markdown):
-{
-  "reply": "A brief helpful response to the user",
-  "searchKeywords": ["keyword1", "keyword2"],
-  "categorySuggestion": "Technology"
-}`;
-    const text = await callGroq(prompt, 200);
-    const aiResponse = parseAIJSON(text);
-    const searchString = aiResponse.searchKeywords?.join("|") || query;
-    const articles = await searchNews(searchString, user);
-    return { ...aiResponse, articles: articles || [] };
+    // ── Step 1: Use Groq to extract clean search keywords ─────────────────
+    const kwPrompt = `Extract 2-4 search keywords from this user message for a news database query.
+User message: "${q}"
+Respond ONLY with a JSON array of strings, e.g. ["keyword1", "keyword2"].
+No explanation, no markdown.`;
+
+    let keywords = [];
+    try {
+      const kwText = await callGroq(kwPrompt, 60, true, "chatbot-kw");
+      const match  = kwText.match(/\[[\s\S]*?\]/);
+      if (match) keywords = JSON.parse(match[0]).filter(k => typeof k === "string" && k.length > 2);
+    } catch (_) {}
+
+    // Strip filler prefix so "tell me more about: Fibre internet" → "Fibre internet"
+    const cleanQuery = q
+      .replace(/^(tell me more about|explain|summarise|summarize|what is|more on|about)[:\s]*/i, "")
+      .trim();
+
+    if (keywords.length === 0) {
+      keywords = cleanQuery.split(/\s+/).filter(w => w.length > 3);
+    }
+
+    // ── Step 2: Search DB with those keywords ─────────────────────────────
+    // Full-phrase match first (catches "Tell me more about: [exact title]")
+    let articles = await News.find({
+      $or: [
+        { title:   { $regex: cleanQuery, $options: "i" } },
+        { content: { $regex: cleanQuery, $options: "i" } },
+        { summary: { $regex: cleanQuery, $options: "i" } },
+        { tags:    { $in: [new RegExp(cleanQuery, "i")] } },
+      ],
+    }).sort({ publishedAt: -1 }).limit(5);
+
+    // Word-by-word OR fallback
+    if (articles.length === 0 && keywords.length > 0) {
+      const regexes = keywords.map(w => new RegExp(w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i"));
+      articles = await News.find({
+        $or: [
+          { title:    { $in: regexes } },
+          { content:  { $in: regexes } },
+          { tags:     { $in: regexes } },
+          { category: { $in: regexes } },
+        ],
+      }).sort({ publishedAt: -1 }).limit(5);
+    }
+
+    // Final fallback — latest 3 so bot is never empty
+    if (articles.length === 0) {
+      articles = await News.find().sort({ publishedAt: -1 }).limit(3);
+    }
+
+    // ── Step 3: Feed real articles to Groq and get a grounded reply ───────
+    const articleContext = articles
+      .map((a, i) =>
+        `Article ${i + 1}:\nTitle: ${a.title}\nSource: ${a.source}\nSummary: ${a.summary || a.content?.substring(0, 200) || ""}\nPublished: ${new Date(a.publishedAt).toDateString()}`
+      )
+      .join("\n\n");
+
+    const replyPrompt = `You are NewsCrest AI, a smart news assistant for a user in ${city}.
+
+User asked: "${q}"
+
+Real articles from our database that are relevant:
+
+${articleContext}
+
+Instructions:
+- Answer ONLY using the real articles above. Do NOT invent facts or headlines.
+- If the user asked "tell me more about [title]", explain that specific article in detail.
+- If the user asked for a topic or top headlines, summarise key points from the real articles.
+- Be conversational and clear. Use bullet points where helpful.
+- Keep response under 200 words.`;
+
+    const reply = await callGroq(replyPrompt, 400, true, "chatbot-reply");
+
+    return {
+      reply:   reply || "Here's what I found for you.",
+      intent:  "news_query",
+      articles: articles.slice(0, 5),
+    };
+
   } catch (err) {
     console.error("Chatbot logical failure:", err.message);
-    const articles = await searchNews(query, user).catch(() => []);
+    const articles = await News.find().sort({ publishedAt: -1 }).limit(3).catch(() => []);
     return {
-      reply: "I'm having a bit of trouble searching the news right now. Try asking about a specific topic!",
-      articles
+      reply: "I'm having a bit of trouble right now. Please try again in a moment.",
+      articles,
     };
   }
 };
@@ -163,20 +265,30 @@ export const searchNews = async (keywords, user) => {
     if (!keywords || keywords.trim() === "") {
       return await News.find().sort({ publishedAt: -1 }).limit(limit);
     }
+
     const safeKeywords = keywords.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
     let query = {
       $or: [
         { title:   { $regex: safeKeywords, $options: "i" } },
         { content: { $regex: safeKeywords, $options: "i" } }
       ]
     };
+
     if (user?.interests?.length > 0) {
       query = {
-        $and: [{ $or: query.$or }, { category: { $in: user.interests } }]
+        $and: [
+          { $or: query.$or },
+          { category: { $in: user.interests } }
+        ]
       };
     }
+
     const results = await News.find(query).sort({ publishedAt: -1 }).limit(limit);
-    return results.length ? results : await News.find().sort({ publishedAt: -1 }).limit(5);
+    if (results.length === 0) {
+      return await News.find().sort({ publishedAt: -1 }).limit(5);
+    }
+    return results;
   } catch (error) {
     console.error("Database Search Error:", error);
     return await News.find().sort({ publishedAt: -1 }).limit(3);

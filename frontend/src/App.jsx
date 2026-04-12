@@ -5,13 +5,14 @@ import { useEffect, useState } from "react";
 import LandingPage from "./pages/LandingPage";
 import LoginPage from "./pages/LoginPage";
 import SignupPage from "./pages/SignupPage";
+import OtpPage from "./pages/OtpPage";
 import DashboardPage from "./pages/DashboardPage";
 import ExplorePage from "./pages/ExplorePage";
 import CategoriesPage from "./pages/CategoriesPage";
 import CategoryDetailPage from "./pages/CategoryDetailPage";
 import ArticleDetailPage from "./pages/ArticleDetailPage";
 import ChatbotPage from "./pages/ChatbotPage";
-import ComparePage from "./pages/ComparePage";
+import FactCheckPage from "./pages/FactCheckPage";
 import SavedPage from "./pages/SavedPage";
 import NotificationsPage from "./pages/NotificationsPage";
 import NotesPage from "./pages/NotesPage";
@@ -41,13 +42,14 @@ const PAGE_MAP = {
   landing: LandingPage,
   login: LoginPage,
   signup: SignupPage,
+  otp: OtpPage,
   dashboard: DashboardPage,
   explore: ExplorePage,
   categories: CategoriesPage,
   catdetail: CategoryDetailPage,
   article: ArticleDetailPage,
   chatbot: ChatbotPage,
-  compare: ComparePage,
+  factcheck: FactCheckPage,
   saved: SavedPage,
   notifications: NotificationsPage,
   notes: NotesPage,

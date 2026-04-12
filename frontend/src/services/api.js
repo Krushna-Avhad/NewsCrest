@@ -264,43 +264,26 @@ export const tasksAPI = {
 
 // src/services/api.js
 export const chatbotAPI = {
-  startSession: async () => {
-    return "session-" + Date.now();
-  },
+  startSession: async () => "session-" + Date.now(),
 
-  // src/services/api.js
-
-sendMessage: async (sessionId, query) => {
-  try {
-    let token = localStorage.getItem("nc_token");
-
-    // 🔥 THE FIX: If the token is stored as a JSON string (with quotes), 
-    // or if it's the literal string "null", we must fix it.
+  sendMessage: async (sessionId, query) => {
+    const token = getToken();
     if (!token || token === "undefined" || token === "null") {
-       throw new Error("No valid token found. Please log in again.");
+      throw new Error("No valid token found. Please log in again.");
     }
+    const cleanToken = token.startsWith('"') ? JSON.parse(token) : token;
 
-    // If your login code used JSON.stringify(token), we need to parse it back
-    if (token.startsWith('"')) {
-      token = JSON.parse(token);
-    }
-
-    console.log("🚀 SENDING CLEAN TOKEN:", token.substring(0, 10) + "..."); 
-
-    const response = await axios.post("http://localhost:5000/api/news/chat", 
-      { query }, 
-      { headers: { Authorization: `Bearer ${token}` } } // Space after Bearer is vital!
+    const response = await axios.post(
+      `${BASE_URL}/news/chat`,
+      { query },
+      { headers: { Authorization: `Bearer ${cleanToken}`, "Content-Type": "application/json" } }
     );
 
     return {
-      text: response.data.reply,
-      news: response.data.articles || []
+      text:     response.data.reply    || "",
+      articles: (response.data.articles || []).map(normaliseArticle),
     };
-  } catch (err) {
-    console.error("❌ AXIOS FAILED:", err.message);
-    throw err;
-  }
-}
+  },
 };
 
 // ─── HATKE ────────────────────────────────────────────────────────────────────
@@ -313,8 +296,8 @@ export const compareAPI = {
       method: "POST",
       body: JSON.stringify({ item1, item2 }),
     });
-    // Return the full comparison.results — this has ALL AI fields
-    // including socialImpact which is not stored in DB schema
+    // returns { comparison, message }
+    // comparison.results has the actual AI analysis
     return data.comparison?.results || data.comparison || data;
   },
 
@@ -322,7 +305,7 @@ export const compareAPI = {
     const data = await request(`/compare/articles/${id1}/${id2}`, {
       method: "POST",
     });
-    // Same — return results directly, not the DB record
+    // returns { comparison, message }
     return data.comparison?.results || data.comparison || data;
   },
 
@@ -387,8 +370,11 @@ export const timelineAPI = {
   },
 
   // Req 3: get ALL articles from DB for the "Select Article" dropdown
-  getAllArticles: async () => {
-    const data = await request("/timeline/all-articles");
+  dismissStory: (storyId) => request(`/timeline/story/${storyId}`, { method: "DELETE" }),
+
+  getAllArticles: async (search = "") => {
+    const q = search ? `?search=${encodeURIComponent(search)}` : "";
+    const data = await request(`/timeline/all-articles${q}`);
     return data.articles || [];
   },
 
@@ -401,15 +387,6 @@ export const timelineAPI = {
     return { story: data.story || null, message: data.message || "" };
   },
 
-  // Fetch timelines for a batch of saved article IDs in one request
-  getStoriesForSaved: async (articleIds) => {
-    const data = await request("/timeline/for-saved-articles", {
-      method: "POST",
-      body: JSON.stringify({ articleIds }),
-    });
-    return data.stories || [];
-  },
-
   // Req 1: record read/save activity for persistent history
   recordActivity: (action, article) =>
     request("/timeline/record-activity", {
@@ -419,8 +396,7 @@ export const timelineAPI = {
 };
 
 // ─── PERSPECTIVE ──────────────────────────────────────────────────────────────
-// POST /api/perspective  → { perspectives: [{id, label, text}] }
-// Note: emoji field has been removed; use persona icons in the UI instead.
+// POST /api/perspective  → { perspectives: [{id, label, emoji, text}] }
 export const perspectiveAPI = {
   generate: async ({ title, description, category }) => {
     const data = await request("/perspective", {
@@ -428,5 +404,14 @@ export const perspectiveAPI = {
       body: JSON.stringify({ title, description, category }),
     });
     return data.perspectives || [];
+  },
+};
+
+export const factCheckAPI = {
+  verify: async (payload) => {
+    return request("/fact-check", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
   },
 };

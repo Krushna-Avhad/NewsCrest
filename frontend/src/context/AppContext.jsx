@@ -27,6 +27,9 @@ export function AppProvider({ children }) {
   const [authLoading, setAuthLoading] = useState(false);
   const [authError, setAuthError] = useState("");
 
+  // OTP verification state — set after signup, cleared after verifyOtp
+  const [pendingOtpEmail, setPendingOtpEmail] = useState(null);
+
   // News — all loaded independently of auth
   const [headlines, setHeadlines] = useState([]);
   const [feedArticles, setFeedArticles] = useState([]);
@@ -49,6 +52,7 @@ export function AppProvider({ children }) {
   // Compare / prefs
   const [compareArticle, setCompareArticle] = useState(null);
   const [chatbotInitialQuery, setChatbotInitialQuery] = useState(null);
+  const [perspectivesHandoff, setPerspectivesHandoff] = useState(null); // { article, perspectives, activeId }
   const [readingPrefs, setReadingPrefs] = useState({
     language: "English",
     feedLayout: "Card Grid",
@@ -247,6 +251,12 @@ const loadPublicNews = async () => {
         // login returns { token, user }
         setUser(data.user);
         setPage("dashboard");
+        // Reload alerts after a short delay — backend processes notifications
+        // asynchronously after login, so we wait 2s before fetching
+        setTimeout(() => {
+          alertsAPI.getAll().then((all) => setAlerts(all)).catch(() => {});
+          alertsAPI.getUnreadCount().then((c) => setAlertCount(c)).catch(() => {});
+        }, 2000);
         return true;
       } catch (err) {
         setAuthError(err.message || "Login failed. Please try again.");
@@ -264,9 +274,10 @@ const loadPublicNews = async () => {
       setAuthError("");
       try {
         const data = await authAPI.signup(payload);
-        // signup returns { token, user, message }
-        setUser(data.user);
-        setPage("dashboard");
+        // New OTP flow: backend returns { message: "OTP sent..." } with no token
+        // Store email so OTP screen can use it, then navigate to otp page
+        setPendingOtpEmail(payload.email);
+        setPage("otp");
         return true;
       } catch (err) {
         setAuthError(err.message || "Sign up failed. Please try again.");
@@ -277,6 +288,43 @@ const loadPublicNews = async () => {
     },
     [setPage],
   );
+
+  const verifyOtp = useCallback(
+    async (email, otp) => {
+      setAuthLoading(true);
+      setAuthError("");
+      try {
+        const data = await authAPI.verifyOtp(email, otp);
+        // verifyOtp returns { token, user, message }
+        setUser(data.user);
+        setPendingOtpEmail(null);
+        setPage("dashboard");
+        // Reload alerts after backend processes first-login notifications
+        setTimeout(() => {
+          alertsAPI.getAll().then((all) => setAlerts(all)).catch(() => {});
+          alertsAPI.getUnreadCount().then((c) => setAlertCount(c)).catch(() => {});
+        }, 2500);
+        return true;
+      } catch (err) {
+        setAuthError(err.message || "OTP verification failed.");
+        return false;
+      } finally {
+        setAuthLoading(false);
+      }
+    },
+    [setPage],
+  );
+
+  const resendOtp = useCallback(async (email) => {
+    setAuthError("");
+    try {
+      await authAPI.resendOtp(email);
+      return true;
+    } catch (err) {
+      setAuthError(err.message || "Failed to resend OTP.");
+      return false;
+    }
+  }, []);
 
   const logout = useCallback(async () => {
     await authAPI.logout();
@@ -449,6 +497,9 @@ const loadPublicNews = async () => {
         authError,
         login,
         signup,
+        verifyOtp,
+        resendOtp,
+        pendingOtpEmail,
         logout,
         updateProfile,
         headlines,
@@ -483,6 +534,8 @@ const loadPublicNews = async () => {
         openCompareWith,
         chatbotInitialQuery,
         setChatbotInitialQuery,
+        perspectivesHandoff,
+        setPerspectivesHandoff,
       }}
     >
       {children}

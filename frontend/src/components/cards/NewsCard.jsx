@@ -106,6 +106,7 @@ function CardImage({ article }) {
           alt={article.title}
           className="w-full h-full object-cover"
           onError={(e) => {
+            // Fallback to placeholder on broken image
             e.target.parentElement.innerHTML = `<div class="w-full h-[180px] bg-gradient-to-br ${gradient} flex items-center justify-center"></div>`;
           }}
         />

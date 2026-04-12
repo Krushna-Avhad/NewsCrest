@@ -2,7 +2,6 @@
 import { useState, useRef, useEffect } from "react";
 import { useApp } from "../context/AppContext";
 import AppShell from "../components/layout/AppShell";
-import { Button } from "../components/ui/Primitives";
 import { chatbotAPI } from "../services/api";
 import {
   SendIcon,
@@ -14,86 +13,116 @@ import {
 } from "../components/ui/Icons";
 
 const SUGGESTIONS = [
-  { label: "Latest AI news", query: "Latest AI news" },
-  {
-    label: "What happened in India today?",
-    query: "What happened in India today?",
-  },
-  { label: "Sports updates", query: "Sports updates" },
-  { label: "Health advisories", query: "Health advisories" },
+  { label: "Latest AI news",            query: "Latest AI news" },
+  { label: "What happened in India today?", query: "What happened in India today?" },
+  { label: "Sports updates",            query: "Sports updates" },
+  { label: "Health advisories",         query: "Health advisories" },
 ];
 
 const QUICK_CMDS = [
   { Icon: TrendingIcon, label: "Top Headlines" },
-  { Icon: GlobeIcon, label: "Global Politics" },
-  { Icon: ZapIcon, label: "Breaking News" },
-  { Icon: SearchIcon, label: "Search Topic" },
+  { Icon: GlobeIcon,   label: "Global Politics" },
+  { Icon: ZapIcon,     label: "Breaking News" },
+  { Icon: SearchIcon,  label: "Search Topic" },
 ];
 
 export default function ChatbotPage() {
   const { openArticle, chatbotInitialQuery, setChatbotInitialQuery } = useApp();
-  const [sessionId, setSessionId] = useState(null);
-  const [messages, setMessages] = useState([
-  { role: 'bot', text: 'Hi! I am your NewsCrest assistant. Ask me anything about the news!' }
-]);
-  const [input, setInput] = useState("");
-  const [typing, setTyping] = useState(false);
-  const bottomRef = useRef(null);
 
+  const [sessionId, setSessionId]   = useState(null);
+  const [messages, setMessages]     = useState([
+    { role: "bot", text: "Hi! I am your NewsCrest assistant. Ask me anything about the news!" },
+  ]);
+  const [input, setInput]   = useState("");
+  const [typing, setTyping] = useState(false);
+
+  const bottomRef         = useRef(null);
+  // Tracks the live sessionId without triggering re-renders (avoids stale closure)
+  const sessionIdRef      = useRef(null);
+  // Ensures the initial query fires exactly once even if the component re-renders
+  const initialQuerySent  = useRef(false);
+
+  // Auto-scroll on new messages
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, typing]);
 
-  // Start session on mount
+  // ── Session init — runs once on mount ──────────────────────────────────────
   useEffect(() => {
-    chatbotAPI
-      .startSession()
+    let cancelled = false;
+
+    chatbotAPI.startSession()
       .then((id) => {
+        if (cancelled) return;
+        sessionIdRef.current = id;
         setSessionId(id);
-        // Auto-send initial query from Daily Brief if present
-        if (chatbotInitialQuery) {
-          setChatbotInitialQuery(null);
-          setTimeout(() => send(chatbotInitialQuery), 500);
+
+        // Fire initial query exactly once using the id directly (not state)
+        if (chatbotInitialQuery && !initialQuerySent.current) {
+          initialQuerySent.current = true;
+          const q = chatbotInitialQuery;
+          setChatbotInitialQuery(null);   // clear context before send
+          // Small delay so the welcome message renders first
+          setTimeout(() => sendWithSession(q, id), 300);
         }
       })
       .catch(() => {
+        if (cancelled) return;
         const fallbackId = "local-" + Date.now();
+        sessionIdRef.current = fallbackId;
         setSessionId(fallbackId);
-        if (chatbotInitialQuery) {
+
+        if (chatbotInitialQuery && !initialQuerySent.current) {
+          initialQuerySent.current = true;
+          const q = chatbotInitialQuery;
           setChatbotInitialQuery(null);
-          setTimeout(() => send(chatbotInitialQuery), 500);
+          setTimeout(() => sendWithSession(q, fallbackId), 300);
         }
       });
-  }, []);
 
-  // Inside ChatbotPage.jsx
-const send = async (queryOverride) => {
-  const queryText = queryOverride || input;
-  if (!queryText.trim()) return;
+    return () => { cancelled = true; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const userMessage = { role: 'user', text: queryText };
-  
-  setMessages(prev => [...prev, userMessage]);
-  setInput(""); 
-  setTyping(true); // 🔥 Fix: Use setTyping, not setLoading
+  // ── Core send — accepts optional sid so initial call doesn't rely on state ─
+  const sendWithSession = async (queryText, sid) => {
+    const text = (queryText || "").trim();
+    if (!text) return;
 
-  try {
-    const resp = await chatbotAPI.sendMessage(sessionId, queryText);
+    // Use passed sid, or fall back to the ref (always current), or state
+    const activeSession = sid || sessionIdRef.current || sessionId;
 
-    const botMessage = { 
-      role: 'ai', // 🔥 Fix: Match this to "ai" so your CSS/Icons work
-      text: resp.text, 
-      news: resp.news 
-    };
+    setMessages((prev) => [...prev, { role: "user", text }]);
+    setTyping(true);
 
-    setMessages(prev => [...prev, botMessage]);
-  } catch (err) {
-    setMessages(prev => [...prev, { role: 'ai', text: "I'm having trouble connecting. Try again?" }]);
-  } finally {
-    setTyping(false); // 🔥 Fix: Use setTyping
-  }
-};
+    try {
+      const resp = await chatbotAPI.sendMessage(activeSession, text);
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "ai",
+          text:    resp.text     || "No response received.",
+          articles: resp.articles || [],
+        },
+      ]);
+    } catch (_) {
+      setMessages((prev) => [
+        ...prev,
+        { role: "ai", text: "I'm having trouble connecting. Try again?" },
+      ]);
+    } finally {
+      setTyping(false);
+    }
+  };
 
+  // Public send — called by input box, suggestions, quick commands
+  const send = (queryOverride) => {
+    const text = queryOverride || input;
+    if (!text.trim() || typing) return;
+    setInput("");
+    sendWithSession(text);
+  };
+
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <AppShell title="AI Chatbot">
       <div
@@ -102,15 +131,14 @@ const send = async (queryOverride) => {
       >
         {/* Chat main */}
         <div className="flex flex-col bg-white rounded-card border border-gold-subtle shadow-card overflow-hidden slide-in-left">
+
           {/* Header */}
           <div className="px-5 py-4 border-b border-gold/25 flex items-center gap-3">
             <div className="w-9 h-9 rounded-full bg-maroon flex items-center justify-center">
               <BotIcon size={16} className="text-white" />
             </div>
             <div>
-              <div className="text-[13.5px] font-semibold text-text-primary">
-                NewsCrest AI
-              </div>
+              <div className="text-[13.5px] font-semibold text-text-primary">NewsCrest AI</div>
               <div className="flex items-center gap-1.5 text-[11px] text-green-600">
                 <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block pulse-dot" />
                 {sessionId ? "Online · Ready to help" : "Connecting..."}
@@ -120,6 +148,8 @@ const send = async (queryOverride) => {
 
           {/* Messages */}
           <div className="flex-1 overflow-y-auto p-5 space-y-4">
+
+            {/* Suggestion pills — only shown when only the welcome message exists */}
             {messages.length === 1 && (
               <div className="flex flex-wrap gap-2 mb-2">
                 {SUGGESTIONS.map((s) => (
@@ -139,28 +169,50 @@ const send = async (queryOverride) => {
                 key={i}
                 className={`flex gap-3 fade-in ${msg.role === "user" ? "flex-row-reverse" : ""}`}
               >
+                {/* Avatar */}
                 <div
-                  className={`w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center font-bold text-[13px] ${msg.role === "ai" ? "bg-maroon text-white" : "bg-wheat text-maroon"}`}
+                  className={`w-9 h-9 rounded-full flex-shrink-0 flex items-center justify-center font-bold text-[13px] ${
+                    msg.role === "ai" || msg.role === "bot"
+                      ? "bg-maroon text-white"
+                      : "bg-wheat text-maroon"
+                  }`}
                 >
-                  {msg.role === "ai" ? (
+                  {msg.role === "ai" || msg.role === "bot" ? (
                     <BotIcon size={15} className="text-white" />
-                  ) : msg.role === "user" ? (
-                    "✦"
-                  ) : (
-                    "A"
-                  )}
+                  ) : "✦"}
                 </div>
+
+                {/* Bubble */}
                 <div className="max-w-[70%]">
                   <div
-                    className={`px-4 py-3 rounded-[16px] text-[14px] leading-[1.55] ${msg.role === "ai" ? "bg-white border border-gold-subtle text-text-primary rounded-tl-[4px]" : "bg-maroon text-white rounded-tr-[4px]"}`}
+                    className={`px-4 py-3 rounded-[16px] text-[14px] leading-[1.65] ${
+                      msg.role === "ai" || msg.role === "bot"
+                        ? "bg-white border border-gold-subtle text-text-primary rounded-tl-[4px]"
+                        : "bg-maroon text-white rounded-tr-[4px]"
+                    }`}
                   >
-                    {msg.text}
+                    {msg.role === "ai" || msg.role === "bot" ? (
+                      <div
+                        className="whitespace-pre-wrap prose prose-sm max-w-none"
+                        dangerouslySetInnerHTML={{
+                          __html: msg.text
+                            .replace(/\n/g, "<br>")
+                            .replace(/### (.*)/g, '<strong class="text-maroon text-[15px] block mt-3 mb-1">$1</strong>')
+                            .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+                            .replace(/• /g, "•&nbsp;"),
+                        }}
+                      />
+                    ) : (
+                      msg.text
+                    )}
                   </div>
-                  {msg.news?.length > 0 && (
+
+                  {/* Article cards attached to bot message */}
+                  {msg.articles?.length > 0 && (
                     <div className="space-y-2 mt-2">
-                      {msg.news.slice(0, 3).map((a) => (
+                      {msg.articles.slice(0, 3).map((a) => (
                         <div
-                          key={a.id}
+                          key={a.id || a._id}
                           onClick={() => openArticle(a)}
                           className="bg-smoke border border-gold-subtle rounded-[12px] p-3 cursor-pointer hover:border-gold hover:shadow-card transition-all duration-200"
                         >
@@ -202,7 +254,7 @@ const send = async (queryOverride) => {
             <div ref={bottomRef} />
           </div>
 
-          {/* Input */}
+          {/* Input row */}
           <div className="px-5 py-4 border-t border-gold/25 flex gap-3 items-center">
             <input
               value={input}
@@ -238,9 +290,7 @@ const send = async (queryOverride) => {
                   <div className="w-7 h-7 rounded-[8px] bg-maroon/8 flex items-center justify-center text-maroon group-hover:bg-maroon group-hover:text-white transition-all duration-200">
                     <Icon size={14} />
                   </div>
-                  <span className="text-[13px] font-medium text-text-primary">
-                    {label}
-                  </span>
+                  <span className="text-[13px] font-medium text-text-primary">{label}</span>
                 </button>
               ))}
             </div>
@@ -251,8 +301,7 @@ const send = async (queryOverride) => {
               Pro Tip
             </div>
             <p className="text-[13px] text-text-secondary leading-[1.6]">
-              Try asking: "Summarise today's top 3 stories" or "What's important
-              for IT professionals today?"
+              Try asking: "Summarise today's top 3 stories" or "What's important for IT professionals today?"
             </p>
           </div>
         </div>

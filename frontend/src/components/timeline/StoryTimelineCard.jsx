@@ -1,6 +1,5 @@
 // src/components/timeline/StoryTimelineCard.jsx
 import { useState } from "react";
-import { timelineAPI } from "../../services/api";
 
 function timeAgo(dateStr) {
   if (!dateStr) return "";
@@ -56,8 +55,6 @@ function TimelineDots({ articles, max = 4 }) {
 }
 
 export default function StoryTimelineCard({ story, onOpen }) {
-  const [following, setFollowing] = useState(false);
-  const [followLoading, setFollowLoading] = useState(false);
 
   if (!story || !story.articles?.length) return null;
 
@@ -66,19 +63,6 @@ export default function StoryTimelineCard({ story, onOpen }) {
   const coverImage = latestArticle?.imageUrl || originArticle?.imageUrl;
   const newCount = story.newArticlesCount || 0;
 
-  const handleFollow = async (e) => {
-    e.stopPropagation();
-    setFollowLoading(true);
-    try {
-      if (following) {
-        await timelineAPI.unfollow(story._id);
-      } else {
-        await timelineAPI.follow(story._id);
-      }
-      setFollowing(f => !f);
-    } catch (_) {}
-    setFollowLoading(false);
-  };
 
   return (
     <div
@@ -153,17 +137,7 @@ export default function StoryTimelineCard({ story, onOpen }) {
               {story.articles.length} events · Updated {timeAgo(story.lastUpdatedAt)}
             </span>
           </div>
-          <button
-            onClick={handleFollow}
-            disabled={followLoading}
-            className={`text-[10px] font-bold px-2.5 py-1 rounded-[6px] transition-all duration-200 ${
-              following
-                ? "bg-maroon text-white"
-                : "bg-lemon text-gold-muted border border-gold/30 hover:bg-gold/10"
-            }`}
-          >
-            {followLoading ? "..." : following ? "Following" : "Follow"}
-          </button>
+
         </div>
       </div>
     </div>

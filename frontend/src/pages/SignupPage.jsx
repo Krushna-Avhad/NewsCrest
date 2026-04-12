@@ -3,6 +3,8 @@ import { useState } from "react";
 import { useApp } from "../context/AppContext";
 import { LogoOnDark } from "../components/ui/Logo";
 import { Button, InputField } from "../components/ui/Primitives";
+import { EyeIcon, EyeOffIcon } from "../components/ui/Icons";
+import {useEffect } from "react";
 import {
   CheckIcon,
   UserIcon,
@@ -10,6 +12,7 @@ import {
   BellIcon,
   DiamondIcon,
 } from "../components/ui/Icons";
+import { indiaStatesCities } from "../data/indialocations";
 
 const PROFILE_TYPES = [
   "Student",
@@ -61,15 +64,18 @@ const STEP_CONTENT = [
 export default function SignupPage() {
   const { setPage, signup, authLoading, authError } = useApp();
   const [step, setStep] = useState(1);
-
+const [selectedState, setSelectedState] = useState("");
+const [selectedCity, setSelectedCity] = useState("");
   // Form state
+  const [showPassword, setShowPassword] = useState(false);
+const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [profileType, setProfileType] = useState("IT Employee");
-  const [city, setCity] = useState("Pune");
-  const [state, setState] = useState("Maharashtra");
+  const [profileType, setProfileType] = useState([]);
+  // const [city, setCity] = useState("");
+  // const [state, setState] = useState("");
   const [selectedInterests, setSelectedInterests] = useState([
     "Technology",
     "AI",
@@ -89,15 +95,28 @@ export default function SignupPage() {
     );
 
   const handleStep1Next = () => {
-    if (!name.trim()) return setStep1Error("Please enter your full name.");
-    if (!email.trim()) return setStep1Error("Please enter your email.");
-    if (!password || password.length < 6)
-      return setStep1Error("Password must be at least 6 characters.");
-    if (password !== confirmPassword)
-      return setStep1Error("Passwords do not match.");
-    setStep1Error("");
-    setStep(2);
-  };
+  if (!name.trim()) return setStep1Error("Please enter your full name.");
+
+  if (!/^[a-zA-Z\s]+$/.test(name))
+    return setStep1Error("Name should contain only letters.");
+
+  if (!email.trim()) return setStep1Error("Please enter your email.");
+
+  if (
+    !passwordChecks.length ||
+    !passwordChecks.upper ||
+    !passwordChecks.number ||
+    !passwordChecks.special
+  ) {
+    return setStep1Error("Password does not meet security requirements.");
+  }
+
+  if (password !== confirmPassword)
+    return setStep1Error("Passwords do not match.");
+
+  setStep1Error("");
+  setStep(2);
+};
 
   const handleSignup = async () => {
     await signup({
@@ -106,14 +125,78 @@ export default function SignupPage() {
       password,
       profileType,
       interests: selectedInterests,
-      city,
-      state,
+      city: selectedCity,
+      state: selectedState,
       notificationPreferences: notifPrefs,
     });
   };
 
   const content = STEP_CONTENT[step - 1];
+const passwordChecks = {
+  length: password.length >= 8,
+  upper: /[A-Z]/.test(password),
+  number: /[0-9]/.test(password),
+  special: /[^A-Za-z0-9]/.test(password),
+};
+useEffect(() => {
+  if (!name.trim()) {
+    setStep1Error("Please enter your full name.");
+  } else if (!/^[a-zA-Z\s]+$/.test(name)) {
+    setStep1Error("Name should contain only letters.");
+  } else if (!email.trim()) {
+    setStep1Error("Please enter your email.");
+  } else if (!password) {
+    setStep1Error("Please enter a password.");
+  } else if (!passwordChecks.length) {
+    setStep1Error("Password must be at least 8 characters.");
+  } else if (!passwordChecks.upper) {
+    setStep1Error("Password must include an uppercase letter.");
+  } else if (!passwordChecks.number) {
+    setStep1Error("Password must include a number.");
+  } else if (!passwordChecks.special) {
+    setStep1Error("Password must include a special character.");
+  } else if (password !== confirmPassword) {
+    setStep1Error("Passwords do not match.");
+  } else {
+    setStep1Error("");
+  }
+}, [name, email, password, confirmPassword]);
+const generatePassword = () => {
+  const upper = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const lower = "abcdefghijklmnopqrstuvwxyz";
+  const numbers = "0123456789";
+  const special = "!@#$%^&*";
 
+  // Ensure at least one of each
+  let password =
+    upper[Math.floor(Math.random() * upper.length)] +
+    lower[Math.floor(Math.random() * lower.length)] +
+    numbers[Math.floor(Math.random() * numbers.length)] +
+    special[Math.floor(Math.random() * special.length)];
+
+  const allChars = upper + lower + numbers + special;
+
+  // Fill remaining length
+  for (let i = password.length; i < 12; i++) {
+    password += allChars[Math.floor(Math.random() * allChars.length)];
+  }
+
+  // Shuffle password
+  password = password
+    .split("")
+    .sort(() => Math.random() - 0.5)
+    .join("");
+
+  setPassword(password);
+  setConfirmPassword(password);
+};
+const toggleProfileType = (p) => {
+  setProfileType((prev) =>
+    prev.includes(p)
+      ? prev.filter((x) => x !== p)
+      : [...prev, p]
+  );
+};
   return (
     <div className="min-h-screen grid grid-cols-2">
       {/* Left panel */}
@@ -225,7 +308,12 @@ export default function SignupPage() {
                   type="text"
                   placeholder="Arjun Sharma"
                   value={name}
-                  onChange={(e) => setName(e.target.value)}
+                  onChange={(e) => {
+  const value = e.target.value;
+  if (/^[a-zA-Z\s]*$/.test(value)) {
+    setName(value);
+  }
+}}
                   className="w-full px-4 py-[11px] border-[1.5px] border-gold/25 rounded-[12px] font-inter text-[14px] text-text-primary bg-white outline-none transition-all duration-200 placeholder:text-text-muted focus:border-gold focus:shadow-[0_0_0_3px_rgba(218,165,32,0.12)]"
                 />
               </div>
@@ -245,26 +333,71 @@ export default function SignupPage() {
                 <label className="block text-[12px] font-semibold text-text-secondary mb-1.5">
                   Password
                 </label>
-                <input
-                  type="password"
-                  placeholder="Create a strong password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-4 py-[11px] border-[1.5px] border-gold/25 rounded-[12px] font-inter text-[14px] text-text-primary bg-white outline-none transition-all duration-200 placeholder:text-text-muted focus:border-gold focus:shadow-[0_0_0_3px_rgba(218,165,32,0.12)]"
-                />
+                <div className="relative">
+  <input
+    type={showPassword ? "text" : "password"}
+    placeholder="Create a strong password"
+    value={password}
+    onChange={(e) => setPassword(e.target.value)}
+    className="w-full px-4 py-[11px] border-[1.5px] border-gold/25 rounded-[12px] pr-11"
+  />
+  <button
+    type="button"
+    onClick={() => setShowPassword(!showPassword)}
+    className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted"
+  >
+    {showPassword ? <EyeOffIcon size={16} /> : <EyeIcon size={16} />}
+  </button>
+</div>
               </div>
+              <div className="mt-2 text-[12px] grid grid-cols-2 gap-x-6 gap-y-2">
+  <div className={`flex items-center gap-2 ${passwordChecks.length ? "text-green-600" : "text-red-500"}`}>
+    <span>•</span>
+    <span>At least 8 characters</span>
+  </div>
+
+  <div className={`flex items-center gap-2 ${passwordChecks.upper ? "text-green-600" : "text-red-500"}`}>
+    <span>•</span>
+    <span>One uppercase letter</span>
+  </div>
+
+  <div className={`flex items-center gap-2 ${passwordChecks.number ? "text-green-600" : "text-red-500"}`}>
+    <span>•</span>
+    <span>One number</span>
+  </div>
+
+  <div className={`flex items-center gap-2 ${passwordChecks.special ? "text-green-600" : "text-red-500"}`}>
+    <span>•</span>
+    <span>One special character</span>
+  </div>
+</div>
+                <button
+  type="button"
+  onClick={generatePassword}
+  className="text-[12px] text-maroon font-semibold mt-2 hover:underline"
+>
+  Suggest strong password
+</button>
               <div className="mb-6">
                 <label className="block text-[12px] font-semibold text-text-secondary mb-1.5">
                   Confirm Password
                 </label>
-                <input
-                  type="password"
-                  placeholder="Re-enter password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleStep1Next()}
-                  className="w-full px-4 py-[11px] border-[1.5px] border-gold/25 rounded-[12px] font-inter text-[14px] text-text-primary bg-white outline-none transition-all duration-200 placeholder:text-text-muted focus:border-gold focus:shadow-[0_0_0_3px_rgba(218,165,32,0.12)]"
-                />
+                <div className="relative">
+  <input
+    type={showConfirmPassword ? "text" : "password"}
+    placeholder="Re-enter password"
+    value={confirmPassword}
+    onChange={(e) => setConfirmPassword(e.target.value)}
+    className="w-full px-4 py-[11px] border-[1.5px] border-gold/25 rounded-[12px] pr-11"
+  />
+  <button
+    type="button"
+    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+    className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted"
+  >
+    {showConfirmPassword ? <EyeOffIcon size={16} /> : <EyeIcon size={16} />}
+  </button>
+</div>
               </div>
               <Button
                 variant="primary"
@@ -299,15 +432,15 @@ export default function SignupPage() {
                 {PROFILE_TYPES.map((p) => (
                   <button
                     key={p}
-                    onClick={() => setProfileType(p)}
-                    className={`p-3.5 rounded-[12px] border-[1.5px] text-left cursor-pointer transition-all duration-200 ${profileType === p ? "border-maroon bg-maroon/5 shadow-[0_0_0_1px_#741515]" : "border-gold/25 hover:border-gold/50 hover:bg-smoke"}`}
+                    onClick={() => toggleProfileType(p)}
+                    className={`p-3.5 rounded-[12px] border-[1.5px] text-left cursor-pointer transition-all duration-200 ${profileType.includes(p) ? "border-maroon bg-maroon/5 shadow-[0_0_0_1px_#741515]" : "border-gold/25 hover:border-gold/50 hover:bg-smoke"}`}
                   >
                     <div
-                      className={`text-[13.5px] font-semibold ${profileType === p ? "text-maroon" : "text-text-primary"}`}
+                      className={`text-[13.5px] font-semibold ${profileType.includes(p) ? "text-maroon" : "text-text-primary"}`}
                     >
                       {p}
                     </div>
-                    {profileType === p && (
+                    {profileType.includes(p) && (
                       <div className="text-[11px] text-maroon/60 mt-0.5">
                         Selected
                       </div>
@@ -315,32 +448,54 @@ export default function SignupPage() {
                   </button>
                 ))}
               </div>
-              <div className="grid grid-cols-2 gap-3 mb-5">
-                <div>
-                  <label className="block text-[12px] font-semibold text-text-secondary mb-1.5">
-                    City
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Pune"
-                    value={city}
-                    onChange={(e) => setCity(e.target.value)}
-                    className="w-full px-4 py-[11px] border-[1.5px] border-gold/25 rounded-[12px] font-inter text-[14px] text-text-primary bg-white outline-none transition-all duration-200 focus:border-gold focus:shadow-[0_0_0_3px_rgba(218,165,32,0.12)]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[12px] font-semibold text-text-secondary mb-1.5">
-                    State
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Maharashtra"
-                    value={state}
-                    onChange={(e) => setState(e.target.value)}
-                    className="w-full px-4 py-[11px] border-[1.5px] border-gold/25 rounded-[12px] font-inter text-[14px] text-text-primary bg-white outline-none transition-all duration-200 focus:border-gold focus:shadow-[0_0_0_3px_rgba(218,165,32,0.12)]"
-                  />
-                </div>
-              </div>
+              <div className="grid grid-cols-2 gap-4 mb-6">
+  {/* City */}
+  <div>
+    <label className="block text-xs font-semibold text-gray-500 mb-1.5">
+      City
+    </label>
+    <select
+      value={selectedCity}
+      onChange={(e) => setSelectedCity(e.target.value)}
+      disabled={!selectedState}
+      className="w-full px-3 py-2 rounded-md bg-gray-100 text-gray-700 text-sm 
+                 border border-gray-200 focus:outline-none focus:ring-2 
+                 focus:ring-maroon/60 disabled:opacity-60 disabled:cursor-not-allowed"
+    >
+      <option value="">Select City</option>
+      {selectedState &&
+        indiaStatesCities[selectedState].map((city) => (
+          <option key={city} value={city}>
+            {city}
+          </option>
+        ))}
+    </select>
+  </div>
+
+  {/* State */}
+  <div>
+    <label className="block text-xs font-semibold text-gray-500 mb-1.5">
+      State
+    </label>
+    <select
+      value={selectedState}
+      onChange={(e) => {
+        setSelectedState(e.target.value);
+        setSelectedCity("");
+      }}
+      className="w-full px-3 py-2 rounded-md bg-gray-100 text-gray-700 text-sm 
+                 border border-gray-200 focus:outline-none focus:ring-2 
+                 focus:ring-maroon/60"
+    >
+      <option value="">Select State</option>
+      {Object.keys(indiaStatesCities).map((state) => (
+        <option key={state} value={state}>
+          {state}
+        </option>
+      ))}
+    </select>
+  </div>
+</div>
               <div className="flex gap-3">
                 <Button
                   variant="secondary"

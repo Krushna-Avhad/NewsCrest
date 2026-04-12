@@ -412,16 +412,16 @@ export default function ProfilePage() {
                 key: "feedLayout",
                 opts: ["Card Grid", "List Grid"],
               },
-              {
-                label: "Text Size",
-                key: "textSize",
-                opts: ["Small", "Medium", "Large"],
-              },
-              {
-                label: "Language",
-                key: "language",
-                opts: ["English", "Hindi", "Marathi"],
-              },
+              // {
+              //   label: "Text Size",
+              //   key: "textSize",
+              //   opts: ["Small", "Medium", "Large"],
+              // },
+              // {
+              //   label: "Language",
+              //   key: "language",
+              //   opts: ["English", "Hindi", "Marathi"],
+              // },
             ].map(({ label, key, opts }) => (
               <div
                 key={key}

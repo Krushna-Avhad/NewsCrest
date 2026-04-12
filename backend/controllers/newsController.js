@@ -8,50 +8,53 @@ import { summarizeNews, filterNewsAdvanced } from "../services/aiService.js";
 import { processChatbotQuery } from "../services/aiService.js";
 import User from "../models/User.js";
 import News from "../models/News.js";
-import Groq from "groq-sdk";
-import {
-  recordUserActivity,
-  processArticleIntoTimeline,
-} from "../services/storyTimelineService.js";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import { recordUserActivity } from "../services/storyTimelineService.js";
 
-// Initialize Groq
-const groq = new Groq({ apiKey: process.env.GROK_API_KEY });
+// 1. INITIALIZE Gemini (Do this at the TOP)
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// Chat helper using Groq
-async function processWithGroq(query) {
+// 2. HELPER FUNCTION (Define this before the controller uses it)
+async function processWithGemini(query) {
   try {
-    const prompt = `You are NewsCrest AI. 
-- If the user is GREETING you or asking WHO YOU ARE, set "isNewsQuery": false.
-- If the user is asking for NEWS or specific TOPICS, set "isNewsQuery": true.
+    // Try the standard model name first
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
-User message: "${query}"
+    const prompt = `
+      You are NewsCrest AI. 
+      - If the user is GREETING you or asking WHO YOU ARE, set "isNewsQuery": false.
+      - If the user is asking for NEWS or specific TOPICS, set "isNewsQuery": true.
+  
+      User message: "${query}"
+  
+      Respond ONLY in JSON:
+      {
+      "isNewsQuery": boolean,
+      "keywords": "search terms",
+      "text": "your response"
+      }
+    `;
 
-Respond ONLY in JSON:
-{
-"isNewsQuery": boolean,
-"keywords": "search terms",
-"text": "your response"
-}`;
+    const result = await model.generateContent(prompt);
+    const responseText = result.response.text();
+    
+    // Safety check for empty or malformed AI response
+    if (!responseText) throw new Error("Empty AI response");
 
-    const response = await groq.chat.completions.create({
-      model: "llama-3.1-8b-instant",
-      messages: [{ role: "user", content: prompt }],
-      max_tokens: 200,
-    });
-
-    const raw = response.choices[0]?.message?.content?.trim() || "";
-    if (!raw) throw new Error("Empty AI response");
-    const cleanedJson = raw.replace(/```json|```/g, "").trim();
+    const cleanedJson = responseText.replace(/```json|```/g, "").trim();
     return JSON.parse(cleanedJson);
   } catch (error) {
-    const greetings = ["hi", "hello", "who are you", "what is this"];
-    const isGreeting = greetings.some((g) => query.toLowerCase().includes(g));
-    return {
-      isNewsQuery: !isGreeting,
-      keywords: query,
-      text: isGreeting
-        ? "I am NewsCrest AI! I can help you find the latest news. What are you interested in today?"
-        : `I'm checking our archives for "${query}"...`,
+    // 429 Quota or 404 Error Fallback
+    const greetings = ['hi', 'hello', 'who are you', 'what is this'];
+    const isGreeting = greetings.some(g => query.toLowerCase().includes(g));
+    
+
+    return { 
+      isNewsQuery: !isGreeting, // If it's a greeting, don't search news
+      keywords: query, 
+      text: isGreeting 
+        ? "I am NewsCrest AI! I can help you find the latest news. What are you interested in today?" 
+        : `I'm checking our archives for "${query}"...`
     };
   }
 }
@@ -266,28 +269,38 @@ export const getTopHeadlines = async (req, res) => {
   }
 };
 
-// ✅ GET TRENDING NEWS
+// ✅ GET TRENDING NEWS (paginated)
 export const getTrendingNews = async (req, res) => {
   try {
-    const limit = parseInt(req.query.limit) || 15;
+    const page  = parseInt(req.query.page)  || 1;
+    const limit = parseInt(req.query.limit) || 50;
+    const skip  = (page - 1) * limit;
 
-    // Get most viewed + most saved articles from last 7 days as "trending"
     const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const trendingQuery = { publishedAt: { $gte: sevenDaysAgo } };
 
-    let news = await News.find({
-      publishedAt: { $gte: sevenDaysAgo },
-    })
-      .sort({ viewCount: -1, "engagement.saves": -1, publishedAt: -1 })
+    let total = await News.countDocuments(trendingQuery);
+
+    // If recent DB is too sparse, fall back to all-time trending
+    const useFallback = total < 10;
+    const finalQuery  = useFallback ? {} : trendingQuery;
+    if (useFallback) total = await News.countDocuments({});
+
+    const news = await News.find(finalQuery)
+      .sort({ trending: -1, viewCount: -1, "engagement.saves": -1, publishedAt: -1 })
+      .skip(skip)
       .limit(limit);
 
-    // Fallback — if less than 5 recent articles, just get most viewed overall
-    if (news.length < 5) {
-      news = await News.find()
-        .sort({ viewCount: -1, "engagement.saves": -1, publishedAt: -1 })
-        .limit(limit);
-    }
+    const totalPages = Math.ceil(total / limit);
 
-    res.json({ news });
+    res.json({
+      news,
+      pagination: {
+        page, limit, total, totalPages,
+        hasNext: page < totalPages,
+        hasPrev: page > 1,
+      },
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -568,11 +581,7 @@ export const saveArticle = async (req, res) => {
 
     // Persist rich snapshot for timeline generation (non-blocking)
     const savedArticle = await News.findById(articleId);
-    if (savedArticle) {
-      recordUserActivity(userId, "saved", savedArticle).catch(() => {});
-      // Add to story timeline so updates appear on the Story Timeline page
-      processArticleIntoTimeline(savedArticle).catch(() => {});
-    }
+    if (savedArticle) recordUserActivity(userId, "saved", savedArticle).catch(() => {});
 
     res.json({ message: "Article saved successfully" });
   } catch (err) {
@@ -706,70 +715,112 @@ function getProfileCategories(profileType) {
 export const getChatbotResponse = async (req, res) => {
   try {
     const { query } = req.body;
+    if (!query?.trim()) {
+      return res.json({ reply: "Please ask me something!", articles: [] });
+    }
 
-    // 1. Get AI analysis
-    const aiResponse = await processWithGroq(query);
+    const q = query.trim();
+    const lc = q.toLowerCase();
 
-    let articles = [];
+    // ── 1. Detect greetings — respond immediately, no DB needed ──────────────
+    const greetWords = ["hi", "hello", "hey", "who are you", "what are you", "what is newscrest"];
+    const isGreeting = greetWords.some(g => lc.includes(g)) && lc.length < 40;
+    if (isGreeting) {
+      return res.json({
+        reply: "Hi! I'm NewsCrest AI 👋 Ask me about any news topic — politics, sports, tech, or paste an article title and I'll tell you more about it.",
+        articles: [],
+      });
+    }
 
-    // 2. Only search DB if Groq says it's a news-related question
-    if (aiResponse.isNewsQuery === true) {
-      const searchTerms = aiResponse.keywords
-        .toLowerCase()
-        .split(" ")
-        .filter((word) => word.length > 2);
+    // ── 2. DB search — always run against real articles ───────────────────────
+    // Strip filler phrases like "tell me more about:" / "explain:" so the
+    // actual article title is used as the search string
+    const cleanQuery = q
+      .replace(/^(tell me more about|explain|summarise|summarize|what is|more on|about)[:\s]*/i, "")
+      .trim();
 
-      // Strict match first: must mention at least two keywords
+    // Build search terms — every word over 3 chars becomes a regex term
+    const words = cleanQuery
+      .split(/\s+/)
+      .filter(w => w.length > 3)
+      .map(w => w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+
+    // Try full-phrase match first (best for "Tell me more about: [title]")
+    let articles = await News.find({
+      $or: [
+        { title:   { $regex: cleanQuery, $options: "i" } },
+        { content: { $regex: cleanQuery, $options: "i" } },
+        { summary: { $regex: cleanQuery, $options: "i" } },
+        { tags:    { $in: [new RegExp(cleanQuery, "i")] } },
+      ],
+    })
+      .sort({ publishedAt: -1 })
+      .limit(5);
+
+    // Fallback: OR across individual words
+    if (articles.length === 0 && words.length > 0) {
       articles = await News.find({
-        $and: [
-          { title: { $regex: searchTerms[0] || "", $options: "i" } },
-          {
-            $or: [
-              {
-                title: {
-                  $regex: searchTerms[1] || searchTerms[0],
-                  $options: "i",
-                },
-              },
-              {
-                description: {
-                  $regex: searchTerms[1] || searchTerms[0],
-                  $options: "i",
-                },
-              },
-            ],
-          },
+        $or: [
+          { title:    { $in: words.map(w => new RegExp(w, "i")) } },
+          { content:  { $in: words.map(w => new RegExp(w, "i")) } },
+          { tags:     { $in: words.map(w => new RegExp(w, "i")) } },
+          { category: { $in: words.map(w => new RegExp(w, "i")) } },
         ],
       })
         .sort({ publishedAt: -1 })
-        .limit(3);
+        .limit(5);
+    }
 
-      // Broad fallback if strict match returns nothing
-      if (articles.length === 0) {
-        articles = await News.find({
-          $or: [
-            { title: { $in: searchTerms.map((t) => new RegExp(t, "i")) } },
-            {
-              description: { $in: searchTerms.map((t) => new RegExp(t, "i")) },
-            },
-          ],
-        })
-          .sort({ publishedAt: -1 })
-          .limit(3);
-      } // ← Bug 2 fix: close the fallback if
-    } // ← Bug 1 fix: close the isNewsQuery if
+    // Last resort: newest 3 articles so the bot is never empty-handed
+    if (articles.length === 0) {
+      articles = await News.find().sort({ publishedAt: -1 }).limit(3);
+    }
 
-    // Bug 3 fix: res.json is always reached, regardless of which branch ran
-    res.json({
-      reply: aiResponse.text,
-      articles,
+    // ── 3. Build context from real articles and ask Groq ─────────────────────
+    const user = req.user;
+    const city = user?.city || "your city";
+
+    const articleContext = articles
+      .map((a, i) =>
+        `Article ${i + 1}:\nTitle: ${a.title}\nSource: ${a.source}\nSummary: ${a.summary || a.content?.substring(0, 200) || "No summary"}\nPublished: ${new Date(a.publishedAt).toDateString()}`
+      )
+      .join("\n\n");
+
+    const { default: Groq } = await import("groq-sdk");
+    const groq = new Groq({ apiKey: process.env.GROQ_API_KEY || process.env.GEMINI_API_KEY });
+
+    const prompt = `You are NewsCrest AI, a smart news assistant for users in ${city}.
+
+The user said: "${q}"
+
+Here are REAL articles from our database that are relevant:
+
+${articleContext}
+
+Instructions:
+- Answer ONLY based on the real articles above. Do NOT invent facts.
+- If the user asked "tell me more about [title]", give a detailed explanation of that specific article.
+- If the user asked a general topic (sports, politics etc.), summarise the key points from the articles.
+- If asking for top headlines, list what you actually found above.
+- Be conversational, clear and concise. Use bullet points where helpful.
+- Never say "I found X articles" — just answer naturally.
+- Keep response under 200 words.`;
+
+    const completion = await groq.chat.completions.create({
+      model: "llama-3.1-8b-instant",
+      messages: [{ role: "user", content: prompt }],
+      max_tokens: 400,
     });
+
+    const reply = completion.choices[0]?.message?.content?.trim()
+      || "Here's what I found in our database for you.";
+
+    res.json({ reply, articles });
+
   } catch (error) {
-    // ← Bug 4 fix: try now has its closing } before catch
-    console.error("💥 Chatbot Controller Error:", error);
+    console.error("💥 Chatbot Error:", error.message);
     res.status(200).json({
-      reply:
-        "I'm having a bit of trouble with my AI brain. How else can I help?",
+      reply: "I'm having a bit of trouble right now. Please try again in a moment.",
       articles: [],
     });
   }
