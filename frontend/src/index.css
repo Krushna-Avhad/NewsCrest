@@ -193,3 +193,5 @@ html.text-size-large  { font-size: 19px; }
 .stat-appear {
   animation: statAppear 0.5s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
+/*git add src/context/AppContext.jsx src/index.css
+//git commit -m "fix: text size option now applies to whole website"*/
