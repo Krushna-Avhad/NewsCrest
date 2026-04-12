@@ -144,9 +144,6 @@ export default function LoginPage() {
                 Remember me
               </span>
             </label>
-            <a className="text-[13px] text-maroon font-medium cursor-pointer hover:underline">
-              Forgot password?
-            </a>
           </div>
 
           <Button

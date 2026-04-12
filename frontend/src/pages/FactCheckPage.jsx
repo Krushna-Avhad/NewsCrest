@@ -4,6 +4,7 @@ import AppShell from "../components/layout/AppShell";
 import { EyeIcon } from "../components/ui/Icons";
 import { Button } from "../components/ui/Primitives";
 import { timelineAPI, factCheckAPI } from "../services/api";
+import { normaliseArticle } from "../services/api"; 
 
 export default function FactCheckPage() {
   const { chatbotInitialQuery } = useApp();
@@ -21,7 +22,7 @@ export default function FactCheckPage() {
     const load = async () => {
       try {
         const data = await timelineAPI.getAllArticles();
-        setArticles(data || []);
+setArticles((data || []).map(normaliseArticle));
       } catch (err) {
         console.error(err);
       }
@@ -55,8 +56,11 @@ useEffect(() => {
   );
 
   // Verify logic
-  const handleVerify = async (articleData = selectedArticle) => {
-  if (!articleData) return;
+const handleVerify = async (articleData = selectedArticle) => {
+  if (!articleData || !articleData.title) {
+    console.error("❌ Missing title for fact check", articleData);
+    return;
+  }
 
   try {
     setLoading(true);
@@ -64,8 +68,7 @@ useEffect(() => {
 
     const res = await factCheckAPI.verify({
       title: articleData.title,
-      description:
-        articleData.summary || articleData.content,
+      description: articleData.summary || articleData.content,
       source: articleData.source,
     });
 
@@ -117,11 +120,13 @@ useEffect(() => {
   <div
     key={a.articleId || a._id}
     onClick={() => {
-      setSelectedArticle(a);
-      setQuery(a.title);
-      setIsOpen(false);
-      setResult(null);
-    }}
+  setSelectedArticle(a);
+  setQuery(a.title);
+  setIsOpen(false);
+  setResult(null);
+
+  handleVerify(a); // 🔥 THIS LINE FIXES YOUR ISSUE
+}}
     className="px-3 py-2 hover:bg-gray-100 cursor-pointer"
   >
     {a.title}

@@ -253,9 +253,8 @@ export default function OtpPage() {
               <p className="text-[13px] text-text-muted">
                 Resend code in{" "}
                 <span className="font-semibold text-maroon tabular-nums">
-  {Math.floor(resendTimer / 60)}:
-  {String(resendTimer % 60).padStart(2, "0")}
-</span>
+                  {Math.floor(resendTimer/60)}:{String(resendTimer%60).padStart(2,"0")}
+                </span>
               </p>
             ) : (
               <button
