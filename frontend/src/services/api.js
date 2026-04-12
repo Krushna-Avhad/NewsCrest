@@ -445,3 +445,5 @@ export const factCheckAPI = {
     });
   },
 };
+//git add frontend/src/services/api.js
+//git commit -m "feat: add changePassword and updatePreferences API methods"
