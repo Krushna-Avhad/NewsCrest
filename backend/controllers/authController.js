@@ -263,3 +263,6 @@ export const logout = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+ //4. authController.js
+//git add backend/controllers/authController.js
+//git commit -m "feat: add changePassword and updatePreferences controller endpoints"
