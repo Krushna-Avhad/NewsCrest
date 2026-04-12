@@ -522,3 +522,6 @@ export default function ProfilePage() {
     </AppShell>
   );
 }
+//# 3. ProfilePage.jsx
+//git add frontend/src/pages/ProfilePage.jsx
+//git commit -m "feat: real password change with backend validation, fix notification prefs sync"
