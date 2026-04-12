@@ -594,3 +594,5 @@ const loadPublicNews = async () => {
 export function useApp() {
   return useContext(AppContext);
 }
+//git add frontend/src/context/AppContext.jsx
+//git commit -m "feat: add changePassword function and persist readingPrefs to DB"
