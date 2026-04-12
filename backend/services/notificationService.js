@@ -443,6 +443,5 @@ function shouldSendEmail(type, priority) {
     type === "daily_digest"
   );
 }
-//6. notificationService.js
-//git add backend/services/notificationService.js
+// //git add backend/services/notificationService.js
 //git commit -m "fix: lower relevance threshold to 0.5 and add cron job debug logging"
