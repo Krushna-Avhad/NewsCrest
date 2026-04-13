@@ -44,7 +44,6 @@ const PAGE_MAP = {
   login: LoginPage,
   signup: SignupPage,
   otp: OtpPage,
-
   dashboard: DashboardPage,
   explore: ExplorePage,
   categories: CategoriesPage,
@@ -62,7 +61,7 @@ const PAGE_MAP = {
 };
 
 function Router() {
-  const { page, user, setPage, authLoading } = useApp();
+  const { page, user, setPage } = useApp();
   const [ready, setReady] = useState(false);
 
   // ✅ Register service worker + subscribe to push once user is logged in
@@ -70,16 +69,17 @@ function Router() {
 
   // Restore last visited page as soon as possible
   useEffect(() => {
-    if (authLoading) return; // ✅ wait for auth check to finish
-
     const savedPage = localStorage.getItem("lastVisitedPage");
+
     if (user && savedPage && PROTECTED.has(savedPage)) {
       setPage(savedPage);
     } else if (!user) {
       setPage("landing");
     }
+
+    // Mark as ready after setting correct page
     setReady(true);
-  }, [user, authLoading]); // ✅ depend on both
+  }, [user]); // Only run when user changes (login/logout)
 
   // Save current page whenever it changes
   useEffect(() => {
