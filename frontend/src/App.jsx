@@ -20,7 +20,6 @@ import HatkePage from "./pages/HatkePage";
 import ProfilePage from "./pages/ProfilePage";
 import StoryTimelinePage from "./pages/StoryTimelinePage";
 import PerspectivesPage from "./pages/PerspectivesPage";
-import { usePushNotifications } from "./hooks/usePushNotifications";
 
 const PROTECTED = new Set([
   "dashboard",
@@ -61,39 +60,43 @@ const PAGE_MAP = {
 };
 
 function Router() {
-  const { page, user, setPage } = useApp();
+  const { page, user, setPage, authLoading } = useApp();
   const [ready, setReady] = useState(false);
 
-  // ✅ Register service worker + subscribe to push once user is logged in
-  usePushNotifications();
-
-  // Restore last visited page as soon as possible
   useEffect(() => {
+    // ✅ FIX: wait until AppContext finishes its token/getProfile check
+    if (authLoading) return;
+
     const savedPage = localStorage.getItem("lastVisitedPage");
 
     if (user && savedPage && PROTECTED.has(savedPage)) {
+      // Logged-in user — restore last page
       setPage(savedPage);
-    } else if (!user) {
-      setPage("landing");
+    } else if (user) {
+      // Logged-in but no saved page — go to dashboard
+      setPage("dashboard");
     }
+    // If no user, page stays "landing" (AppContext default) — no setPage call
+    // so lastVisitedPage is never corrupted by a spurious "landing" write
 
-    // Mark as ready after setting correct page
     setReady(true);
-  }, [user]); // Only run when user changes (login/logout)
+  }, [user, authLoading]); // ✅ re-runs when auth check completes
 
-  // Save current page whenever it changes
+  // ✅ FIX: only save page when we are truly ready (auth resolved)
+  // and never save "landing" or auth pages — prevents corrupting lastVisitedPage
   useEffect(() => {
-    if (page && page !== "landing") {
+    if (!ready) return;
+    if (page && PROTECTED.has(page)) {
       localStorage.setItem("lastVisitedPage", page);
     }
-  }, [page]);
+  }, [page, ready]);
 
-  // Show blank screen (no flash) until we restore the correct page
+  // Show blank screen until auth check is done and page is restored
   if (!ready) {
     return <div className="min-h-screen bg-smoke" />;
   }
 
-  // Protect routes
+  // Protect routes — unauthenticated users trying to reach protected pages go to login
   const resolvedPage = PROTECTED.has(page) && !user ? "login" : page;
   const PageComponent = PAGE_MAP[resolvedPage] || LandingPage;
 

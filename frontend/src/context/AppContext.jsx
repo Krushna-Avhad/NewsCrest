@@ -24,7 +24,8 @@ export function AppProvider({ children }) {
 
   // Auth
   const [user, setUser] = useState(null);
-  const [authLoading, setAuthLoading] = useState(false);
+  // ✅ FIX 1: start true — Router must not act until token check is complete
+  const [authLoading, setAuthLoading] = useState(true);
   const [authError, setAuthError] = useState("");
 
   // OTP verification state — set after signup, cleared after verifyOtp
@@ -59,7 +60,6 @@ export function AppProvider({ children }) {
     textSize: "Medium",
   });
 
-  // ── Load PUBLIC news on mount — no auth needed ──────────────────────────────
   // -- Apply text size to <html> whenever readingPrefs.textSize changes ---------
   useEffect(() => {
     const size = (readingPrefs.textSize || "Medium").toLowerCase();
@@ -68,6 +68,7 @@ export function AppProvider({ children }) {
     html.classList.add(`text-size-${size}`);
   }, [readingPrefs.textSize]);
 
+  // ── Load PUBLIC news on mount — no auth needed ──────────────────────────────
   useEffect(() => {
     loadPublicNews();
   }, []);
@@ -91,7 +92,14 @@ export function AppProvider({ children }) {
         .catch(() => {
           // Token expired / invalid — clear it
           localStorage.removeItem("nc_token");
+        })
+        .finally(() => {
+          // ✅ FIX 2: always unblock Router — whether token was valid or expired
+          setAuthLoading(false);
         });
+    } else {
+      // ✅ FIX 3: no token — unblock Router immediately
+      setAuthLoading(false);
     }
   }, []);
 
@@ -107,7 +115,7 @@ export function AppProvider({ children }) {
   }, [user]);
 
   // ── Public news — headlines + trending (no auth needed) ────────────────────
-const loadPublicNews = async () => {
+  const loadPublicNews = async () => {
     setNewsLoading(true);
     try {
       const [hl, trending, all] = await Promise.allSettled([
@@ -144,7 +152,7 @@ const loadPublicNews = async () => {
     } catch (_) {}
     setNewsLoading(false);
   };
-  
+
   // ── Personalised feed (requires auth) ──────────────────────────────────────
   const loadPersonalisedFeed = async () => {
     try {
@@ -594,5 +602,3 @@ const loadPublicNews = async () => {
 export function useApp() {
   return useContext(AppContext);
 }
-//git add frontend/src/context/AppContext.jsx
-//git commit -m "feat: add changePassword function and persist readingPrefs to DB"
