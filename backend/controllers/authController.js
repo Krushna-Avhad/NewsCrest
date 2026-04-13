@@ -186,7 +186,7 @@ export const getProfile = async (req, res) => {
 // ── UPDATE PROFILE ────────────────────────────────────────────────────────────
 export const updateProfile = async (req, res) => {
   try {
-    const { name, profileType, interests, country, state, city, notificationPreferences } = req.body;
+    const { name, profileType, interests, country, state, city, notificationPreferences, textSize, language, feedLayout } = req.body;
     const updateData = {};
     if (name)                    updateData.name                    = name;
     if (profileType)             updateData.profileType             = profileType;
@@ -195,12 +195,60 @@ export const updateProfile = async (req, res) => {
     if (state  !== undefined)    updateData.state                   = state;
     if (city   !== undefined)    updateData.city                    = city;
     if (notificationPreferences) updateData.notificationPreferences = notificationPreferences;
+    // ✅ ADDED: persist reading preferences
+    if (textSize)                updateData.textSize                = textSize;
+    if (language)                updateData.language                = language;
+    if (feedLayout)              updateData.feedLayout              = feedLayout;
 
     const user = await User.findByIdAndUpdate(req.user.id, updateData, {
       new: true, runValidators: true,
     }).select("-password");
 
     res.json({ message: "Profile updated successfully", user });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// ── CHANGE PASSWORD ───────────────────────────────────────────────────────────
+export const changePassword = async (req, res) => {
+  try {
+    const { oldPassword, newPassword } = req.body;
+    if (!oldPassword || !newPassword)
+      return res.status(400).json({ message: "Old and new password are required." });
+    if (newPassword.length < 6)
+      return res.status(400).json({ message: "New password must be at least 6 characters." });
+
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ message: "User not found." });
+
+    const isMatch = await bcrypt.compare(oldPassword, user.password);
+    if (!isMatch) return res.status(400).json({ message: "Current password is incorrect." });
+
+    user.password = await bcrypt.hash(newPassword, 12);
+    await user.save();
+
+    res.json({ message: "Password changed successfully." });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// ── UPDATE PREFERENCES (reading prefs + notifications) ───────────────────────
+export const updatePreferences = async (req, res) => {
+  try {
+    const { textSize, language, feedLayout, notificationPreferences } = req.body;
+    const updateData = {};
+    if (textSize)                updateData.textSize                = textSize;
+    if (language)                updateData.language                = language;
+    if (feedLayout)              updateData.feedLayout              = feedLayout;
+    if (notificationPreferences) updateData.notificationPreferences = notificationPreferences;
+
+    const user = await User.findByIdAndUpdate(req.user.id, updateData, {
+      new: true, runValidators: true,
+    }).select("-password");
+
+    res.json({ message: "Preferences updated successfully", user });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -215,3 +263,6 @@ export const logout = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+ //4. authController.js
+//git add backend/controllers/authController.js
+//git commit -m "feat: add changePassword and updatePreferences controller endpoints"
