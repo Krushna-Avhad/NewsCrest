@@ -5,6 +5,7 @@ import Alert from "../models/Alert.js";
 import User  from "../models/User.js";
 import News  from "../models/News.js";
 import { sendNewsAlertEmail, sendDigestEmail } from "./emailService.js";
+import { sendPushToUser } from "../routes/pushRoutes.js";
 
 
 // ─────────────────────────────────────────────────────────────
@@ -211,6 +212,18 @@ export const createAlert = async (
       } catch (err) {
         console.warn(`⚠️ Email failed: ${err.message}`);
       }
+    }
+
+    // ✅ NEW: Send browser push notification (works even when tab is closed)
+    try {
+      await sendPushToUser(userId, {
+        title: alert.title,
+        body: alert.message,
+        url: article.url || "/",
+        priority: alert.priority,
+      });
+    } catch (err) {
+      console.warn(`⚠️ Push notification failed: ${err.message}`);
     }
 
     return alert;
@@ -445,3 +458,4 @@ function shouldSendEmail(type, priority) {
 }
 // //git add backend/services/notificationService.js
 //git commit -m "fix: lower relevance threshold to 0.5 and add cron job debug logging"
+//final working

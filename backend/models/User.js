@@ -1,3 +1,6 @@
+// User.js — replace NewsCrest/backend/models/User.js
+// Only change: added pushSubscription field to store browser push endpoint
+
 import mongoose from "mongoose";
 
 const userSchema = new mongoose.Schema({
@@ -19,6 +22,15 @@ const userSchema = new mongoose.Schema({
     personalizedAlerts: { type: Boolean, default: true },
     dailyDigest: { type: Boolean, default: false }
   },
+  // ✅ NEW: stores browser Web Push subscription object
+  // { endpoint, keys: { p256dh, auth } }
+  pushSubscription: {
+    endpoint: String,
+    keys: {
+      p256dh: String,
+      auth: String,
+    },
+  },
   readingHistory: [{
     articleId: { type: mongoose.Schema.Types.ObjectId, ref: 'News' },
     readAt: { type: Date, default: Date.now },
@@ -27,14 +39,11 @@ const userSchema = new mongoose.Schema({
   savedArticles: [{ type: mongoose.Schema.Types.ObjectId, ref: 'News' }],
   dismissedStories: [{ type: mongoose.Schema.Types.ObjectId, ref: 'StoryTimeline' }],
   searchHistory: [{ query: String, searchedAt: { type: Date, default: Date.now } }],
-  // ✅ ADDED: OTP Email Verification fields
   isVerified: { type: Boolean, default: false },
   otp: { type: String, default: null },
   otpExpiry: { type: Date, default: null },
-
   lastLogin: Date,
   isActive: { type: Boolean, default: true }
 }, { timestamps: true });
-
 
 export default mongoose.model("User", userSchema);
