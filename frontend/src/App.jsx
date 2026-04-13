@@ -43,6 +43,7 @@ const PAGE_MAP = {
   login: LoginPage,
   signup: SignupPage,
   otp: OtpPage,
+
   dashboard: DashboardPage,
   explore: ExplorePage,
   categories: CategoriesPage,
