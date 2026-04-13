@@ -24,7 +24,7 @@ export function AppProvider({ children }) {
 
   // Auth
   const [user, setUser] = useState(null);
-  const [authLoading, setAuthLoading] = useState(false);
+  const [authLoading, setAuthLoading] = useState(true);
   const [authError, setAuthError] = useState("");
 
   // OTP verification state — set after signup, cleared after verifyOtp
@@ -79,13 +79,16 @@ export function AppProvider({ children }) {
       authAPI
         .getProfile()
         .then((data) => {
-          // getProfile returns the user object directly (no wrapper)
           setUser(data);
         })
         .catch(() => {
-          // Token expired / invalid — clear it
           localStorage.removeItem("nc_token");
-        });
+        })
+        .finally(() => {
+          setAuthLoading(false);
+        }); // ✅ done either way
+    } else {
+      setAuthLoading(false); // ✅ no token, nothing to check
     }
   }, []);
 
@@ -101,7 +104,7 @@ export function AppProvider({ children }) {
   }, [user]);
 
   // ── Public news — headlines + trending (no auth needed) ────────────────────
-const loadPublicNews = async () => {
+  const loadPublicNews = async () => {
     setNewsLoading(true);
     try {
       const [hl, trending, all] = await Promise.allSettled([
@@ -138,7 +141,7 @@ const loadPublicNews = async () => {
     } catch (_) {}
     setNewsLoading(false);
   };
-  
+
   // ── Personalised feed (requires auth) ──────────────────────────────────────
   const loadPersonalisedFeed = async () => {
     try {
@@ -161,7 +164,10 @@ const loadPublicNews = async () => {
     setAllArticlesLoading(true);
     try {
       const nextPage = newsPage + 1;
-      const { articles, pagination } = await newsAPI.getAll({ page: nextPage, limit: 50 });
+      const { articles, pagination } = await newsAPI.getAll({
+        page: nextPage,
+        limit: 50,
+      });
       setAllArticles((prev) => [...prev, ...articles]);
       setNewsPagination(pagination);
       setNewsPage(nextPage);
@@ -262,8 +268,14 @@ const loadPublicNews = async () => {
         // Reload alerts after a short delay — backend processes notifications
         // asynchronously after login, so we wait 2s before fetching
         setTimeout(() => {
-          alertsAPI.getAll().then((all) => setAlerts(all)).catch(() => {});
-          alertsAPI.getUnreadCount().then((c) => setAlertCount(c)).catch(() => {});
+          alertsAPI
+            .getAll()
+            .then((all) => setAlerts(all))
+            .catch(() => {});
+          alertsAPI
+            .getUnreadCount()
+            .then((c) => setAlertCount(c))
+            .catch(() => {});
         }, 2000);
         return true;
       } catch (err) {
@@ -309,8 +321,14 @@ const loadPublicNews = async () => {
         setPage("dashboard");
         // Reload alerts after backend processes first-login notifications
         setTimeout(() => {
-          alertsAPI.getAll().then((all) => setAlerts(all)).catch(() => {});
-          alertsAPI.getUnreadCount().then((c) => setAlertCount(c)).catch(() => {});
+          alertsAPI
+            .getAll()
+            .then((all) => setAlerts(all))
+            .catch(() => {});
+          alertsAPI
+            .getUnreadCount()
+            .then((c) => setAlertCount(c))
+            .catch(() => {});
         }, 2500);
         return true;
       } catch (err) {
