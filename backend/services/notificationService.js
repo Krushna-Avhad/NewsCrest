@@ -5,6 +5,7 @@ import Alert from "../models/Alert.js";
 import User  from "../models/User.js";
 import News  from "../models/News.js";
 import { sendNewsAlertEmail, sendDigestEmail } from "./emailService.js";
+import { sendPushToUser } from "../routes/pushRoutes.js";
 
 
 // ─────────────────────────────────────────────────────────────
@@ -213,6 +214,18 @@ export const createAlert = async (
       }
     }
 
+    // ✅ NEW: Send browser push notification (works even when tab is closed)
+    try {
+      await sendPushToUser(userId, {
+        title: alert.title,
+        body: alert.message,
+        url: article.url || "/",
+        priority: alert.priority,
+      });
+    } catch (err) {
+      console.warn(`⚠️ Push notification failed: ${err.message}`);
+    }
+
     return alert;
   } catch (err) {
     console.error("createAlert error:", err.message);
@@ -287,7 +300,8 @@ export const processPersonalizedAlerts = async () => {
       for (const article of articles) {
         const score = calculateRelevanceScore(user, article);
 
-        if (score >= 0.7) {
+        // ✅ FIXED: lowered threshold from 0.7 → 0.5 so interest-matched articles always qualify
+        if (score >= 0.5) {
           const result = await createAlert(
             user._id,
             article._id,
@@ -426,3 +440,6 @@ function shouldSendEmail(type, priority) {
     type === "daily_digest"
   );
 }
+// //git add backend/services/notificationService.js
+//git commit -m "fix: lower relevance threshold to 0.5 and add cron job debug logging"
+//final working

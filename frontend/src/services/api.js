@@ -90,6 +90,15 @@ export const authAPI = {
   getProfile: () => request("/auth/profile"), // returns user object directly
   updateProfile: (payload) =>
     request("/auth/profile", { method: "PUT", body: JSON.stringify(payload) }),
+
+  // ✅ ADDED: change password with old password validation
+  changePassword: (payload) =>
+    request("/auth/change-password", { method: "PUT", body: JSON.stringify(payload) }),
+
+  // ✅ ADDED: update reading preferences + notification prefs
+  updatePreferences: (payload) =>
+    request("/auth/preferences", { method: "PUT", body: JSON.stringify(payload) }),
+
   logout: async () => {
     try {
       await request("/auth/logout", { method: "POST" });
@@ -260,9 +269,6 @@ export const tasksAPI = {
 // ─── CHATBOT ──────────────────────────────────────────────────────────────────
 // POST /api/chatbot/start   → { sessionId, message }
 // POST /api/chatbot/message → { message: {type,content,...}, articles, sessionId, suggestedCategories }
-// src/services/api.js
-
-// src/services/api.js
 export const chatbotAPI = {
   startSession: async () => "session-" + Date.now(),
 
@@ -286,7 +292,7 @@ export const chatbotAPI = {
   },
 };
 
-// ─── HATKE ────────────────────────────────────────────────────────────────────
+// ─── COMPARE ──────────────────────────────────────────────────────────────────
 // POST /api/compare                        → { comparison, message }
 // POST /api/compare/articles/:id1/:id2    → { comparison, message }
 // comparison object has: results { similarities, differences, insight, sentiment, coverage, impact, keyFocus }
@@ -359,6 +365,7 @@ export const timelineAPI = {
 
   follow:   (storyId) => request(`/timeline/follow/${storyId}`, { method: "POST" }),
   unfollow: (storyId) => request(`/timeline/follow/${storyId}`, { method: "DELETE" }),
+  dismissStory: (storyId) => request(`/timeline/story/${storyId}`, { method: "DELETE" }),
 
   // Req 4A: manual input → generate timeline
   generateFromInput: async (input) => {
@@ -407,6 +414,7 @@ export const perspectiveAPI = {
   },
 };
 
+// ─── FACT CHECK ───────────────────────────────────────────────────────────────
 export const factCheckAPI = {
   verify: async (payload) => {
     return request("/fact-check", {
@@ -415,3 +423,5 @@ export const factCheckAPI = {
     });
   },
 };
+//git add frontend/src/services/api.js
+//git commit -m "feat: add changePassword and updatePreferences API methods"

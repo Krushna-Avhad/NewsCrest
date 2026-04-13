@@ -266,3 +266,4 @@ export const logout = async (req, res) => {
  //4. authController.js
 //git add backend/controllers/authController.js
 //git commit -m "feat: add changePassword and updatePreferences controller endpoints"
+//git commit -m "feat: add changePassword and updatePreferences controller endpoints"

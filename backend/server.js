@@ -5,6 +5,7 @@ import mongoose from "mongoose";
 import cors from "cors";
 import cron from "node-cron";
 
+import pushRoutes from "./routes/pushRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
 import newsRoutes from "./routes/newsRoutes.js";
 import userRoutes from "./routes/userRoutes.js";
@@ -52,6 +53,7 @@ app.use("/api/chatbot",   chatbotRoutes);
 app.use("/api/hatke",    hatkeRoutes);
 app.use("/api/timeline", storyTimelineRoutes);
 app.use("/api/perspective", perspectiveRoutes);
+app.use("/api/push", pushRoutes);
 
 // ── Health check ──────────────────────────────────────────────────────────────
 app.get("/api/health", (req, res) => {

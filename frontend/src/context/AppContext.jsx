@@ -60,6 +60,14 @@ export function AppProvider({ children }) {
   });
 
   // ── Load PUBLIC news on mount — no auth needed ──────────────────────────────
+  // -- Apply text size to <html> whenever readingPrefs.textSize changes ---------
+  useEffect(() => {
+    const size = (readingPrefs.textSize || "Medium").toLowerCase();
+    const html = document.documentElement;
+    html.classList.remove("text-size-small", "text-size-medium", "text-size-large");
+    html.classList.add(`text-size-${size}`);
+  }, [readingPrefs.textSize]);
+
   useEffect(() => {
     loadPublicNews();
   }, []);
@@ -546,3 +554,5 @@ const loadPublicNews = async () => {
 export function useApp() {
   return useContext(AppContext);
 }
+//git add frontend/src/context/AppContext.jsx
+//git commit -m "feat: add changePassword function and persist readingPrefs to DB"

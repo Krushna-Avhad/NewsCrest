@@ -25,3 +25,6 @@ router.put("/profile", updateProfile);
 router.post("/logout", logout);
 
 export default router;
+//# 5. authRoutes.js
+//git add backend/routes/authRoutes.js
+//git commit -m "feat: register PUT /change-password and PUT /preferences routes"

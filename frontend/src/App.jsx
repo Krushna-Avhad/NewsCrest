@@ -20,6 +20,7 @@ import HatkePage from "./pages/HatkePage";
 import ProfilePage from "./pages/ProfilePage";
 import StoryTimelinePage from "./pages/StoryTimelinePage";
 import PerspectivesPage from "./pages/PerspectivesPage";
+import { usePushNotifications } from "./hooks/usePushNotifications";
 
 const PROTECTED = new Set([
   "dashboard",
@@ -63,6 +64,9 @@ const PAGE_MAP = {
 function Router() {
   const { page, user, setPage } = useApp();
   const [ready, setReady] = useState(false);
+
+  // ✅ Register service worker + subscribe to push once user is logged in
+  usePushNotifications();
 
   // Restore last visited page as soon as possible
   useEffect(() => {
