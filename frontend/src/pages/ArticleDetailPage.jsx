@@ -390,17 +390,6 @@ export default function ArticleDetailPage() {
                     View Through Different Lenses
                   </h3>
                 </div>
-                {perspectives.length > 0 && (
-                  <button
-                    onClick={handleOpenPerspectivesPage}
-                    className="flex items-center gap-1.5 text-[11px] font-semibold text-maroon hover:underline cursor-pointer"
-                  >
-                    View Full Page
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <polyline points="9 18 15 12 9 6"/>
-                    </svg>
-                  </button>
-                )}
               </div>
 
               {perspectivesLoading ? (

@@ -287,12 +287,20 @@ function scoreArticleRelevance(article, inputKeywords, inputEntities, inputTerms
 // ─────────────────────────────────────────────────────────────────────────────
 // 6. MANUAL INPUT TIMELINE GENERATION (strict filtering)
 // ─────────────────────────────────────────────────────────────────────────────
-export async function generateTimelineFromInput(inputText, userId=null) {
+export async function generateTimelineFromInput(inputText, userId=null, context={}) {
   if (!inputText?.trim()) return null;
 
-  const meta = await extractStoryMeta({ title:inputText, content:inputText, summary:inputText, category:"General" });
+  const meta = await extractStoryMeta({ title:inputText, content:inputText, summary:inputText, category: context.category || "General" });
   const keywordSet = meta.keywords||[];
   const entitySet  = meta.entities||[];
+
+  // Boost keywords with any tags passed from the source article
+  if (context.tags?.length) {
+    context.tags.forEach(t => {
+      const tl = t.toLowerCase();
+      if (!keywordSet.includes(tl)) keywordSet.push(tl);
+    });
+  }
 
   // Build the raw input terms for strict matching (strip stop-words, min 2 chars)
   const inputTermsRaw = inputText.toLowerCase()
@@ -307,11 +315,19 @@ export async function generateTimelineFromInput(inputText, userId=null) {
     try {
       // Fetch a broad candidate set using MongoDB regex — scoring will filter strictly
       const searchTerms = [...new Set([...keywordSet, ...inputTermsRaw])].slice(0, 5);
-      const dbArticles = await News.find({
+      const dbQuery = {
         $or: searchTerms.map(term => ({
           title: { $regex: term, $options: "i" }
         })),
-      }).sort({ publishedAt: -1 }).limit(50)
+      };
+
+      // If we know the category, constrain to it — dramatically reduces noise
+      if (context.category) {
+        dbQuery.category = context.category;
+      }
+
+      const dbArticles = await News.find(dbQuery)
+        .sort({ publishedAt: -1 }).limit(60)
         .select("title summary imageUrl category source publishedAt url readTime content tags");
 
       dbArticles.forEach(a => {
@@ -327,18 +343,49 @@ export async function generateTimelineFromInput(inputText, userId=null) {
           });
         }
       });
+
+      // If category-constrained search returned too few results, try without category constraint
+      if (rawResults.length < 2 && context.category) {
+        const fallbackArticles = await News.find({
+          $or: searchTerms.map(term => ({ title: { $regex: term, $options: "i" } })),
+        }).sort({ publishedAt: -1 }).limit(50)
+          .select("title summary imageUrl category source publishedAt url readTime content tags");
+
+        fallbackArticles.forEach(a => {
+          const alreadyAdded = rawResults.some(r => r.articleId._id?.toString() === a._id?.toString());
+          if (alreadyAdded) return;
+          const score = scoreArticleRelevance(
+            { title:a.title, summary:a.summary, content:a.content, tags:a.tags },
+            keywordSet, entitySet, inputTermsRaw
+          );
+          // Use a higher threshold for the unconstrained fallback to stay strict
+          if (score >= MIN_SCORE + 3) {
+            rawResults.push({
+              score,
+              articleId: { _id:a._id, title:a.title, summary:a.summary, imageUrl:a.imageUrl, category:a.category, source:a.source, publishedAt:a.publishedAt, url:a.url, readTime:a.readTime },
+              isOrigin:false, eventLabel:"Update", addedAt:a.publishedAt||new Date(), source:"db",
+            });
+          }
+        });
+      }
     } catch(err) { console.warn("DB search failed:", err.message); }
   }
 
   // ── Search UserActivity history ────────────────────────────────────────────
   if (userId && inputTermsRaw.length) {
     try {
-      const activities = await UserActivity.find({
+      const historyQuery = {
         userId, action: { $in: ["read","saved","manual_input"] },
         $or: inputTermsRaw.slice(0,3).map(term => ({
           "snapshot.title": { $regex: term, $options: "i" }
         })),
-      }).sort({ actedAt: -1 }).limit(20);
+      };
+      if (context.category) {
+        historyQuery["snapshot.category"] = context.category;
+      }
+
+      const activities = await UserActivity.find(historyQuery)
+        .sort({ actedAt: -1 }).limit(20);
 
       activities.forEach(act => {
         const isDupe = rawResults.some(r =>
@@ -365,7 +412,7 @@ export async function generateTimelineFromInput(inputText, userId=null) {
 
   // ── Topic cluster filter ───────────────────────────────────────────────────
   // Sort by score descending, keep only articles in the top cluster.
-  // "Top cluster" = articles whose score >= 60% of the highest score found.
+  // "Top cluster" = articles whose score >= 75% of the highest score found.
   // This eliminates low-relevance stragglers that slipped past MIN_SCORE.
   rawResults.sort((a, b) => b.score - a.score);
   const topScore = rawResults[0].score;
@@ -385,7 +432,7 @@ export async function generateTimelineFromInput(inputText, userId=null) {
   return {
     _id: `manual-${Date.now()}`,
     title: meta.storyTitle || inputText.slice(0, 70),
-    category: articles[0]?.articleId?.category || "",
+    category: context.category || articles[0]?.articleId?.category || "",
     keywords: keywordSet, entities: entitySet,
     isManualInput: true, lastUpdatedAt: new Date(),
     articles, newArticlesCount: 0,

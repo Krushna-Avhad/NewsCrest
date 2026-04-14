@@ -272,8 +272,23 @@ export const generateFromHistory = async (req, res) => {
     if (!title?.trim()) {
       return res.status(400).json({ error: "title is required" });
     }
+
+    // If we have a real articleId, look up the full article from DB so we can
+    // use its category + tags for strict filtering — avoids unrelated matches.
+    let category = "";
+    let tags = [];
+    if (articleId && mongoose.Types.ObjectId.isValid(articleId)) {
+      try {
+        const article = await News.findById(articleId).select("category tags");
+        if (article) {
+          category = article.category || "";
+          tags = article.tags || [];
+        }
+      } catch (_) {}
+    }
+
     const searchText = `${title.trim()} ${description || ""}`.trim();
-    const story = await generateTimelineFromInput(searchText);
+    const story = await generateTimelineFromInput(searchText, null, { category, tags });
     if (!story) {
       return res.json({
         story: null,

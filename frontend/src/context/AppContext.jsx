@@ -53,6 +53,7 @@ export function AppProvider({ children }) {
   // Compare / prefs
   const [compareArticle, setCompareArticle] = useState(null);
   const [chatbotInitialQuery, setChatbotInitialQuery] = useState(null);
+  const [perspectivesHandoff, setPerspectivesHandoff] = useState(null);
   // ✅ FIXED: raw setter kept internal; setReadingPrefs persists to DB
   const [readingPrefs, setReadingPrefsRaw] = useState({
     language: "English",
@@ -592,6 +593,8 @@ export function AppProvider({ children }) {
         openCompareWith,
         chatbotInitialQuery,
         setChatbotInitialQuery,
+        perspectivesHandoff,
+        setPerspectivesHandoff,
       }}
     >
       {children}

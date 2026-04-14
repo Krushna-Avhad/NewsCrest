@@ -307,26 +307,21 @@ function StoryListItem({ story, onClick, onDelete }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ARTICLE DROPDOWN — shared component with arrow toggle, no category labels
+// ARTICLE DROPDOWN — relative/absolute, always opens directly below trigger
 // ─────────────────────────────────────────────────────────────────────────────
 function ArticleDropdown({ allArticles, articlesLoading, selectedArticle, onSelect, placeholder }) {
-  const [open, setOpen]         = useState(false);
-  const [query, setQuery]       = useState("");
-  const [dropPos, setDropPos]   = useState({ top: 0, left: 0, width: 0 });
-  const containerRef            = useRef(null);
-  const inputRef                = useRef(null);
+  const [open, setOpen]   = useState(false);
+  const [query, setQuery] = useState("");
+  const containerRef      = useRef(null);
 
-  // Close on outside click — only active when open
+  // Close on outside click
   useEffect(() => {
     if (!open) return;
     const handler = (e) => {
-      const portal = document.getElementById("article-dropdown-portal");
-      if (
-        (containerRef.current && containerRef.current.contains(e.target)) ||
-        (portal && portal.contains(e.target))
-      ) return;
-      setOpen(false);
-      setQuery("");
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setOpen(false);
+        setQuery("");
+      }
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -336,16 +331,6 @@ function ArticleDropdown({ allArticles, articlesLoading, selectedArticle, onSele
     ? allArticles.filter(a => a.title?.toLowerCase().includes(query.toLowerCase()))
     : allArticles;
 
-  // Calculate position SYNCHRONOUSLY at click — no useEffect lag or scroll jitter
-  const handleToggle = () => {
-    if (!open && containerRef.current) {
-      const rect = containerRef.current.getBoundingClientRect();
-      setDropPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
-    }
-    setOpen(v => !v);
-    setQuery("");
-  };
-
   const handleSelect = (item) => {
     onSelect(item);
     setOpen(false);
@@ -353,35 +338,29 @@ function ArticleDropdown({ allArticles, articlesLoading, selectedArticle, onSele
   };
 
   return (
-    <>
-      <div ref={containerRef} className="relative">
-        {/* Trigger button */}
-        <button
-          type="button"
-          onClick={handleToggle}
-          className="w-full flex items-center justify-between gap-2 px-3.5 py-2.5 border-[1.5px] border-gold/30 rounded-[10px] bg-smoke text-[13px] transition-all duration-200 hover:border-gold focus:outline-none cursor-pointer"
-          style={{ minHeight: 42 }}
+    <div ref={containerRef} className="relative">
+      {/* Trigger button */}
+      <button
+        type="button"
+        onClick={() => { setOpen(v => !v); setQuery(""); }}
+        className="w-full flex items-center justify-between gap-2 px-3.5 py-2.5 border-[1.5px] border-gold/30 rounded-[10px] bg-smoke text-[13px] transition-all duration-200 hover:border-gold focus:outline-none cursor-pointer"
+        style={{ minHeight: 42 }}
+      >
+        <span className={`flex-1 text-left line-clamp-1 ${selectedArticle ? "text-text-primary font-medium" : "text-text-muted"}`}>
+          {selectedArticle ? selectedArticle.title : (placeholder || "Select an article…")}
+        </span>
+        <svg
+          width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
+          strokeLinecap="round" strokeLinejoin="round"
+          className={`flex-shrink-0 text-text-muted transition-transform duration-200 ${open ? "rotate-180" : ""}`}
         >
-          <span className={`flex-1 text-left line-clamp-1 ${selectedArticle ? "text-text-primary font-medium" : "text-text-muted"}`}>
-            {selectedArticle ? selectedArticle.title : (placeholder || "Select an article…")}
-          </span>
-          <svg
-            width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"
-            strokeLinecap="round" strokeLinejoin="round"
-            className={`flex-shrink-0 text-text-muted transition-transform duration-200 ${open ? "rotate-180" : ""}`}
-          >
-            <polyline points="6 9 12 15 18 9"/>
-          </svg>
-        </button>
-      </div>
+          <polyline points="6 9 12 15 18 9"/>
+        </svg>
+      </button>
 
-      {/* Fixed-position dropdown portal — escapes all overflow:hidden parents */}
+      {/* Dropdown — absolutely positioned directly below the button */}
       {open && (
-        <div
-          id="article-dropdown-portal"
-          style={{ position: "fixed", top: dropPos.top, left: dropPos.left, width: dropPos.width, zIndex: 9999 }}
-          className="bg-white border border-gold/30 rounded-[12px] shadow-2xl overflow-hidden"
-        >
+        <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gold/30 rounded-[12px] shadow-2xl overflow-hidden z-50">
           {/* Search input */}
           <div className="p-2 border-b border-gold/15">
             <div className="relative">
@@ -389,7 +368,7 @@ function ArticleDropdown({ allArticles, articlesLoading, selectedArticle, onSele
                 <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
               </svg>
               <input
-                ref={inputRef}
+                autoFocus
                 type="text"
                 value={query}
                 onChange={e => setQuery(e.target.value)}
@@ -405,7 +384,7 @@ function ArticleDropdown({ allArticles, articlesLoading, selectedArticle, onSele
           </div>
 
           {/* Article list */}
-          <div className="max-h-[260px] overflow-y-auto">
+          <div className="max-h-[280px] overflow-y-auto">
             {filtered.length === 0 ? (
               <p className="text-[12px] text-text-muted text-center py-4">
                 {query ? "No articles match your search" : articlesLoading ? "Loading…" : "No articles available"}
@@ -415,7 +394,7 @@ function ArticleDropdown({ allArticles, articlesLoading, selectedArticle, onSele
                 <button
                   key={item.articleId}
                   type="button"
-                  onMouseDown={e => e.preventDefault()} // prevent blur before click
+                  onMouseDown={e => e.preventDefault()}
                   onClick={() => handleSelect(item)}
                   className={`w-full text-left px-3.5 py-2.5 text-[12.5px] border-b border-gold/10 last:border-0 transition-colors duration-100 cursor-pointer leading-[1.4] ${
                     selectedArticle?.articleId?.toString() === item.articleId?.toString()
@@ -435,7 +414,7 @@ function ArticleDropdown({ allArticles, articlesLoading, selectedArticle, onSele
           )}
         </div>
       )}
-    </>
+    </div>
   );
 }
 
