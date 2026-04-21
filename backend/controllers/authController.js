@@ -8,7 +8,7 @@ import { processUserNotifications } from "../services/notificationService.js";
 const generateOtp = () => Math.floor(100000 + Math.random() * 900000).toString();
 const OTP_TTL_MS  = 10 * 60 * 1000; // 10 minutes
 
-// ── SIGNUP ────────────────────────────────────────────────────────────────────
+// ── SIGNUP (register a new user and send OTP)────────────────────────────────────────────────────────────────────
 export const signup = async (req, res) => {
   try {
     const { name, email, password, profileType, interests, country, state, city, notificationPreferences } = req.body;
@@ -32,10 +32,10 @@ export const signup = async (req, res) => {
       return res.status(200).json({ message: "A new OTP has been sent. Please verify to complete registration." });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 12);
+    const hashedPassword = await bcrypt.hash(password, 12);    //encrypt password
     const otp            = generateOtp();
 
-    await User.create({
+    await User.create({    //save user in DB
       name:    name.trim(),
       email:   email.toLowerCase().trim(),
       password: hashedPassword,
@@ -54,7 +54,7 @@ export const signup = async (req, res) => {
       isVerified: false,
     });
 
-    await sendOtpEmail(email, otp);
+    await sendOtpEmail(email, otp);   //sends OTP email
     return res.status(201).json({ message: "OTP sent to your email. Please verify within 10 minutes." });
   } catch (err) {
     console.error("signup error:", err.message);
@@ -134,7 +134,7 @@ export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    const user = await User.findOne({ email: email?.toLowerCase() });
+    const user = await User.findOne({ email: email?.toLowerCase() });//find user
     if (!user) return res.status(404).json({ message: "User not found" });
 
     if (!user.isActive)
@@ -148,20 +148,20 @@ export const login = async (req, res) => {
       });
     }
 
-    const isMatch = await bcrypt.compare(password, user.password);
+    const isMatch = await bcrypt.compare(password, user.password); //check password
     if (!isMatch) return res.status(400).json({ message: "Invalid credentials" });
 
     // Auto-verify legacy users
     if (isLegacyUser) user.isVerified = true;
     user.lastLogin = new Date();
     await user.save();
-
+//create token
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "7d" });
 
     const userResponse = user.toObject();
     delete userResponse.password;
 
-    res.json({ message: "Login successful", token, user: userResponse });
+    res.json({ message: "Login successful", token, user: userResponse }); //sends token to frontend
 
     // ── Fire-and-forget: process personalised notifications after login ────────
     // This runs AFTER the response is sent so login stays fast.
@@ -169,7 +169,7 @@ export const login = async (req, res) => {
       console.warn("Post-login notifications error:", e.message)
     );
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message });//send notification in background
   }
 };
 
@@ -201,7 +201,7 @@ export const updateProfile = async (req, res) => {
     if (feedLayout)              updateData.feedLayout              = feedLayout;
 
     const user = await User.findByIdAndUpdate(req.user.id, updateData, {
-      new: true, runValidators: true,
+      new: true, runValidators: true,//update only given fields
     }).select("-password");
 
     res.json({ message: "Profile updated successfully", user });
@@ -222,10 +222,10 @@ export const changePassword = async (req, res) => {
     const user = await User.findById(req.user.id);
     if (!user) return res.status(404).json({ message: "User not found." });
 
-    const isMatch = await bcrypt.compare(oldPassword, user.password);
+    const isMatch = await bcrypt.compare(oldPassword, user.password);//check old password
     if (!isMatch) return res.status(400).json({ message: "Current password is incorrect." });
 
-    user.password = await bcrypt.hash(newPassword, 12);
+    user.password = await bcrypt.hash(newPassword, 12); //hash new password
     await user.save();
 
     res.json({ message: "Password changed successfully." });
@@ -257,7 +257,7 @@ export const updatePreferences = async (req, res) => {
 // ── LOGOUT ────────────────────────────────────────────────────────────────────
 export const logout = async (req, res) => {
   try {
-    await User.findByIdAndUpdate(req.user.id, { lastLogin: new Date() });
+    await User.findByIdAndUpdate(req.user.id, { lastLogin: new Date() }); //store in DB as timestamp
     res.json({ message: "Logout successful" });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -266,3 +266,4 @@ export const logout = async (req, res) => {
  //4. authController.js
 //git add backend/controllers/authController.js
 //git commit -m "feat: add changePassword and updatePreferences controller endpoints"
+// runValidators: true, lastLogin: new Date() });

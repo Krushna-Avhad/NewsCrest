@@ -18,13 +18,13 @@ export const getUserAlerts = async (req, res) => {
     const limit  = parseInt(req.query.limit) || 20;
     const skip   = (page - 1) * limit;
     const { type, isRead } = req.query;
-
+//filtering alert
     const query = { userId };
     if (type)             query.type   = type;
     if (isRead !== undefined) query.isRead = isRead === "true";
 
     const alerts = await Alert.find(query)
-      .populate("articleId", "title source publishedAt imageUrl url category")
+      .populate("articleId", "title source publishedAt imageUrl url category")  //attach article data
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit);
@@ -55,7 +55,7 @@ export const getUnreadAlertsCount = async (req, res) => {
 export const markAlertAsRead = async (req, res) => {
   try {
     const alert = await Alert.findOneAndUpdate(
-      { _id: req.params.alertId, userId: req.user.id },
+      { _id: req.params.alertId, userId: req.user.id },//mark one as read
       { isRead: true },
       { new: true }
     );
@@ -79,7 +79,7 @@ export const markAllAlertsAsRead = async (req, res) => {
 // ── DELETE ALERT ──────────────────────────────────────────────────────────────
 export const deleteAlert = async (req, res) => {
   try {
-    const alert = await Alert.findOneAndDelete({ _id: req.params.alertId, userId: req.user.id });
+    const alert = await Alert.findOneAndDelete({ _id: req.params.alertId, userId: req.user.id });//key code
     if (!alert) return res.status(404).json({ message: "Alert not found" });
     res.json({ message: "Alert deleted" });
   } catch (err) {
@@ -90,7 +90,7 @@ export const deleteAlert = async (req, res) => {
 // ── CLEAR ALL ─────────────────────────────────────────────────────────────────
 export const clearAllAlerts = async (req, res) => {
   try {
-    await Alert.deleteMany({ userId: req.user.id });
+    await Alert.deleteMany({ userId: req.user.id });//delete all alert
     res.json({ message: "All alerts cleared" });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -123,6 +123,7 @@ export const getAlertStatistics = async (req, res) => {
           _id:       "$type",
           total:     { $sum: 1 },
           unread:    { $sum: { $cond: [{ $eq: ["$isRead", false] }, 1, 0] } },
+          //{ $eq: ["$isRead", false] } =>is isRead === false ?
           emailSent: { $sum: { $cond: ["$isEmailSent", 1, 0] } },
       }},
     ]);

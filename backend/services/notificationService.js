@@ -26,6 +26,7 @@ export const processUserNotifications = async (userId) => {
     if (!isVerified) return;
 
     if (!user.notificationPreferences?.personalizedAlerts) return;
+    //only continue if user has personalized alerts enabled
 
     // Prevent spam (6h cooldown)
     const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000);
@@ -336,6 +337,9 @@ export const processPersonalizedAlerts = async () => {
 
 // ─────────────────────────────────────────────────────────────
 // CRON: Daily Digest (8 AM)
+//Collect top news of the day
+//Create one digest alert
+//Send email summary
 // ─────────────────────────────────────────────────────────────
 export const processDailyDigest = async () => {
   const startTime = new Date().toISOString();

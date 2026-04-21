@@ -7,7 +7,7 @@ import News from "../models/News.js";
 export const createTask = async (req, res) => {
   try {
     const { title, content, type, dueDate, articleId, tags, priority } = req.body;
-    const userId = req.user.id;
+    const userId = req.user.id;     //gets logged in user
 
     // Validate article exists if provided
     if (articleId) {
@@ -17,7 +17,7 @@ export const createTask = async (req, res) => {
       }
     }
 
-    const task = await Task.create({
+    const task = await Task.create({    //save task in DB
       userId,
       title,
       content,
@@ -27,6 +27,7 @@ export const createTask = async (req, res) => {
       tags: tags || [],
       priority: priority || 'medium',
       metadata: articleId ? {
+        //store article Info
         articleTitle: (await News.findById(articleId))?.title,
         articleUrl: (await News.findById(articleId))?.url,
         category: (await News.findById(articleId))?.category
@@ -84,8 +85,8 @@ export const getTasks = async (req, res) => {
   try {
     const userId = req.user.id;
     const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 20;
-    const skip = (page - 1) * limit;
+    const limit = parseInt(req.query.limit) || 20;  
+    const skip = (page - 1) * limit;//how many record skip from DB
     const { type, isCompleted, isPinned, priority } = req.query;
 
     let query = { userId };
@@ -183,7 +184,7 @@ export const toggleTaskCompletion = async (req, res) => {
       return res.status(404).json({ message: "Task not found" });
     }
 
-    task.isCompleted = !task.isCompleted;
+    task.isCompleted = !task.isCompleted;     //toggle
     await task.save();
 
     res.json({
@@ -206,7 +207,7 @@ export const togglePinStatus = async (req, res) => {
       return res.status(404).json({ message: "Task not found" });
     }
 
-    task.isPinned = !task.isPinned;
+    task.isPinned = !task.isPinned;    //pin task
     await task.save();
 
     res.json({
@@ -224,7 +225,7 @@ export const deleteTask = async (req, res) => {
     const { taskId } = req.params;
     const userId = req.user.id;
 
-    const task = await Task.findOneAndDelete({ _id: taskId, userId });
+    const task = await Task.findOneAndDelete({ _id: taskId, userId });   //delete task
 
     if (!task) {
       return res.status(404).json({ message: "Task not found" });
@@ -245,7 +246,7 @@ export const getTasksByType = async (req, res) => {
     const limit = parseInt(req.query.limit) || 20;
     const skip = (page - 1) * limit;
 
-    const tasks = await Task.find({ userId, type })
+    const tasks = await Task.find({ userId, type })   //key code
       .populate('articleId', 'title source publishedAt imageUrl')
       .sort({ isPinned: -1, createdAt: -1 })
       .skip(skip)
@@ -271,6 +272,7 @@ export const getTasksByType = async (req, res) => {
 };
 
 // ✅ GET UPCOMING DEADLINES
+//Fetch tasks with upcoming due dates
 export const getUpcomingDeadlines = async (req, res) => {
   try {
     const userId = req.user.id;

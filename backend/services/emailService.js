@@ -13,7 +13,8 @@ function isEmailConfigured() {
   );
 }
 
-// ── Fresh transporter per send — always reads current env ────────────────────
+// ── Fresh transporter per send — always reads current env
+//  ────────────────────Creates connection to Gmail server,Used to send emails
 function getTransporter() {
   return nodemailer.createTransport({
     service: "gmail",
