@@ -195,3 +195,46 @@ html.text-size-large  { font-size: 19px; }
 }
 /*git add src/context/AppContext.jsx src/index.css
 //git commit -m "fix: text size option now applies to whole website"*/
+/* =============================================
+   MOBILE RESPONSIVE — Global fixes
+   ============================================= */
+@media (max-width: 768px) {
+
+  /* Prevent anything from overflowing horizontally */
+  * { max-width: 100%; }
+
+  /* Hide sidebar on mobile */
+  aside { display: none !important; }
+
+  /* Full width main content */
+  main { width: 100% !important; margin-left: 0 !important; padding: 0 16px !important; }
+
+  /* Stack any flex/grid rows into columns */
+  .flex { flex-wrap: wrap !important; }
+  section, .grid { grid-template-columns: 1fr !important; }
+
+  /* Hero text sizing */
+  h1 { font-size: 2.2rem !important; line-height: 1.2 !important; }
+  h2 { font-size: 1.5rem !important; }
+  h3 { font-size: 1.1rem !important; }
+
+  /* Cards full width */
+  [class*="card"], [class*="Card"] {
+    width: 100% !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+
+  /* Fix absolute/fixed positioned panels that overflow */
+  [class*="panel"], [class*="Panel"],
+  [class*="sidebar"], [class*="Sidebar"] {
+    position: relative !important;
+    width: 100% !important;
+    right: auto !important;
+    left: auto !important;
+  }
+
+  /* Navbar */
+  nav { padding: 0 16px !important; }
+  nav a { font-size: 14px !important; }
+}
